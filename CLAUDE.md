@@ -25,7 +25,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 
 ## Project Structure
 
-- `~/mcp/gemini-web/` — MCP server (Node.js)
+- `~/.local/share/mcp/gemini-web/` — MCP server (Node.js)
   - `server.mjs` — Main server with `web_search` tool
   - `start.sh` — Launcher (sources API key, runs node)
   - `test-search.mjs` — Standalone test script

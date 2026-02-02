@@ -83,7 +83,7 @@ Key design principles:
 After setup, these files will exist:
 
 ```
-~/mcp/gemini-web/                        # MCP server
+~/.local/share/mcp/gemini-web/                        # MCP server
   server.mjs                             # Main server — registers web_search tool
   start.sh                               # Launcher — resolves API key, starts node
   test-search.mjs                        # Standalone test (bypasses MCP transport)
@@ -104,7 +104,7 @@ After setup, these files will exist:
   restrict-bash-network.sh               # Blocks curl/wget/etc from Bash tool
   require-web-if-recency.sh              # Blocks recency claims without source URLs
 
-~/documents/agent_orchestration/         # Project repo
+~/documents/claude-orchestrator/         # Project repo
   CLAUDE.md                              # Instructions Claude reads per-session
   README.md                              # Architecture and design goals
   SETUP.md                               # This file
@@ -126,8 +126,8 @@ The free tier allows 15 requests/minute for `gemini-2.5-flash`, which is more th
 ## Step 2 — Set Up the MCP Server
 
 ```bash
-mkdir -p ~/mcp/gemini-web
-cd ~/mcp/gemini-web
+mkdir -p ~/.local/share/mcp/gemini-web
+cd ~/.local/share/mcp/gemini-web
 ```
 
 Copy all server files into this directory (see [File Map](#file-map) above for the full tree). Then install dependencies:
@@ -172,8 +172,8 @@ Paste your key when prompted, then press `Ctrl+D`.
 ### Option C: Local .env file (dev convenience)
 
 ```bash
-echo 'GEMINI_API_KEY=your-key-here' > ~/mcp/gemini-web/.env
-chmod 600 ~/mcp/gemini-web/.env
+echo 'GEMINI_API_KEY=your-key-here' > ~/.local/share/mcp/gemini-web/.env
+chmod 600 ~/.local/share/mcp/gemini-web/.env
 ```
 
 ---
@@ -183,7 +183,7 @@ chmod 600 ~/mcp/gemini-web/.env
 This test calls the Gemini API directly, bypassing MCP transport, to confirm your key and network work:
 
 ```bash
-cd ~/mcp/gemini-web
+cd ~/.local/share/mcp/gemini-web
 GEMINI_API_KEY="your-key" node test-search.mjs "latest Node.js release"
 ```
 
@@ -213,7 +213,7 @@ If you see `PASS`, the Gemini integration works. If it fails, check your API key
 ### Option A: CLI (recommended)
 
 ```bash
-claude mcp add gemini-web ~/mcp/gemini-web/start.sh
+claude mcp add gemini-web ~/.local/share/mcp/gemini-web/start.sh
 ```
 
 ### Option B: Manual config
@@ -224,7 +224,7 @@ Edit `~/.claude/settings.json` and add the MCP server block. The full file shoul
 {
   "mcpServers": {
     "gemini-web": {
-      "command": "/home/YOUR_USER/mcp/gemini-web/start.sh"
+      "command": "/home/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
     }
   }
 }
@@ -461,7 +461,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 
 ## Project Structure
 
-- `~/mcp/gemini-web/` — MCP server (Node.js)
+- `~/.local/share/mcp/gemini-web/` — MCP server (Node.js)
   - `server.mjs` — Main server with `web_search` tool
   - `start.sh` — Launcher (sources API key, runs node)
   - `test-search.mjs` — Standalone test script
@@ -476,7 +476,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 Open a new Claude Code session in the project directory:
 
 ```bash
-cd ~/documents/agent_orchestration
+cd ~/documents/claude-orchestrator
 claude
 ```
 
@@ -623,14 +623,14 @@ echo $GEMINI_API_KEY
 secret-tool lookup service mcp-gemini-web account api-key
 
 # Check .env file
-cat ~/mcp/gemini-web/.env
+cat ~/.local/share/mcp/gemini-web/.env
 ```
 
 ### Test script shows FAIL
 
 Run with debug output:
 ```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/mcp/gemini-web/test-search.mjs "test query"
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/.local/share/mcp/gemini-web/test-search.mjs "test query"
 ```
 
 Common causes:
@@ -657,5 +657,5 @@ The network blocker hook has some false positives (e.g., a variable named `curl_
 
 MCP server logs go to stderr as JSON. To see them:
 ```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/mcp/gemini-web/server.mjs 2>&1 | jq '.'
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/.local/share/mcp/gemini-web/server.mjs 2>&1 | jq '.'
 ```
