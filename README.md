@@ -138,3 +138,18 @@ This architecture prioritizes **clarity, security, and long-term flexibility** o
 
 ---
 
+## Session Instructions (CLAUDE.md)
+
+Claude Code automatically loads `CLAUDE.md` files at the start of every session — no hooks or scripts required. Files are loaded from a hierarchy:
+
+| Location | Scope |
+|---|---|
+| `~/.claude/CLAUDE.md` | All projects (global) |
+| Parent directory `CLAUDE.md` files | Inherited by child projects |
+| `./CLAUDE.md` (project root) | This project only (shared via git) |
+| `./.claude/CLAUDE.md` | This project only (gitignored, personal) |
+
+This project uses a project-root `CLAUDE.md` to declare the `web_search` tool, its usage rules, and the project structure. To apply these rules globally, copy the relevant sections to `~/.claude/CLAUDE.md`.
+
+---
+

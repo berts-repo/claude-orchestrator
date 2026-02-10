@@ -429,7 +429,18 @@ Replace `YOUR_USER` with your actual username.
 
 ## Step 7 — Add Project Instructions
 
-Create a `CLAUDE.md` in your project root. Claude Code reads this file at the start of every session. It tells Claude what tools are available and the rules for using them.
+Create a `CLAUDE.md` in your project root. Claude Code **automatically loads** this file at the start of every session — no hooks or configuration needed. It tells Claude what tools are available and the rules for using them.
+
+Claude Code loads `CLAUDE.md` files from multiple locations, in order:
+
+| Location | Scope | Shared? |
+|---|---|---|
+| `~/.claude/CLAUDE.md` | All projects | Personal |
+| Parent directory `CLAUDE.md` files | Inherited by children | Depends |
+| `./CLAUDE.md` (project root) | This project only | Yes (in git) |
+| `./.claude/CLAUDE.md` | This project only | No (gitignored) |
+
+For this project, a project-root `CLAUDE.md` is sufficient. If you want these rules to apply to all Claude Code sessions regardless of directory, copy the relevant sections to `~/.claude/CLAUDE.md`.
 
 Create `CLAUDE.md`:
 
