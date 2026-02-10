@@ -1,79 +1,37 @@
 # Claude Code MCP Bridge — Setup Guide
 
-This guide walks through the complete setup of the **Claude Code MCP Bridge**, a system that gives Claude Code controlled, auditable internet access through a local MCP server backed by Google Gemini with Search grounding.
+This guide walks through the complete setup of the Gemini web search MCP server, including hooks and project configuration.
+
+For the overall architecture and design goals, see **[README.md](README.md)**.
+
+> **Scope:** This guide covers the Gemini web search server. Codex CLI and Docker MCP Gateway setup are documented separately.
 
 ---
 
 ## Table of Contents
 
-1. [How It Works](#how-it-works)
-2. [Prerequisites](#prerequisites)
-3. [File Map](#file-map)
-4. [Step 1 — Get a Gemini API Key](#step-1--get-a-gemini-api-key)
-5. [Step 2 — Set Up the MCP Server](#step-2--set-up-the-mcp-server)
-6. [Step 3 — Configure the API Key](#step-3--configure-the-api-key)
-7. [Step 4 — Test the Server Standalone](#step-4--test-the-server-standalone)
-8. [Step 5 — Register with Claude Code](#step-5--register-with-claude-code)
-9. [Step 6 — Install Hooks](#step-6--install-hooks)
-10. [Step 7 — Add Project Instructions](#step-7--add-project-instructions)
-11. [Step 8 — Verify End-to-End](#step-8--verify-end-to-end)
-12. [How the Code Works](#how-the-code-works)
-13. [Security Model](#security-model)
-14. [Environment Variables](#environment-variables)
-15. [Troubleshooting](#troubleshooting)
-
----
-
-## How It Works
-
-The system has three layers:
-
-```
-User prompt (e.g. "search the web for X")
-   |
-   v
-Claude Code (local)
-   - Hook detects web intent in the prompt
-   - Hook injects instruction: "use web_search tool"
-   - Claude calls the web_search MCP tool
-   |
-   v
-MCP Server (local Node.js process, stdio transport)
-   - Validates and sanitizes the query
-   - Checks rate limits and cache
-   - Forwards to Gemini API with Google Search grounding
-   |
-   v
-Gemini API (Google)
-   - Performs a real Google Search
-   - Returns a grounded summary + source URLs
-   |
-   v
-MCP Server
-   - Sanitizes the response (strips scripts, injection patterns)
-   - Wraps output in UNTRUSTED markers
-   - Caches result (5-minute TTL)
-   - Returns to Claude Code
-   |
-   v
-Claude Code
-   - Stop hook checks: if recency claims exist, sources must be cited
-   - Claude synthesizes answer and presents it with citations
-```
-
-Key design principles:
-- Claude Code never touches the internet directly
-- Web access only happens when the user explicitly asks for it
-- All web content is treated as untrusted input
-- A Bash network blocker hook prevents Claude from using `curl`, `wget`, etc.
+1. [Prerequisites](#prerequisites)
+2. [File Map](#file-map)
+3. [Step 1 — Get a Gemini API Key](#step-1--get-a-gemini-api-key)
+4. [Step 2 — Set Up the MCP Server](#step-2--set-up-the-mcp-server)
+5. [Step 3 — Configure the API Key](#step-3--configure-the-api-key)
+6. [Step 4 — Test the Server Standalone](#step-4--test-the-server-standalone)
+7. [Step 5 — Register with Claude Code](#step-5--register-with-claude-code)
+8. [Step 6 — Install Hooks](#step-6--install-hooks)
+9. [Step 7 — Add Project Instructions](#step-7--add-project-instructions)
+10. [Step 8 — Verify End-to-End](#step-8--verify-end-to-end)
+11. [How the Code Works](#how-the-code-works)
+12. [Environment Variables](#environment-variables)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Prerequisites
 
+- **macOS** (tested on Darwin 25.2.0)
 - **Claude Code** — installed and working
-- **Node.js** — v20+ (the project uses v25.2.1 via [mise](https://mise.jdx.dev/))
-- **jq** — used by hook scripts to parse JSON (`sudo pacman -S jq` on Arch)
+- **Node.js** — v20+
+- **jq** — used by hook scripts to parse JSON (`brew install jq` on macOS)
 - **A Google Gemini API key** — free tier works
 
 ---
@@ -98,13 +56,15 @@ After setup, these files will exist:
     gemini-provider.mjs                  # Gemini + Google Search implementation
     openai-provider.mjs                  # Stub (not yet implemented)
 
-~/.claude/settings.json                  # Claude Code global config (hooks + MCP)
+~/.claude.json                           # MCP server registration
+~/.claude/settings.json                  # Claude Code hooks and security settings
 ~/.claude/hooks/
   inject-web-search-hint.sh              # Detects "search the web" and injects context
   restrict-bash-network.sh               # Blocks curl/wget/etc from Bash tool
+  guard-sensitive-reads.sh               # Blocks sensitive file reads after web content is loaded
   require-web-if-recency.sh              # Blocks recency claims without source URLs
 
-~/documents/claude-orchestrator/         # Project repo
+~/Git/claude-orchestrator/               # Project repo
   CLAUDE.md                              # Instructions Claude reads per-session
   README.md                              # Architecture and design goals
   SETUP.md                               # This file
@@ -151,7 +111,7 @@ chmod +x start.sh
 
 ## Step 3 — Configure the API Key
 
-Pick one of these three methods (checked in this order by `start.sh`):
+Pick one of these methods (checked in this order by `start.sh`):
 
 ### Option A: Environment variable (simplest)
 
@@ -159,15 +119,21 @@ Pick one of these three methods (checked in this order by `start.sh`):
 export GEMINI_API_KEY="your-key-here"
 ```
 
-Add to your `~/.bashrc` or `~/.zshrc` to persist.
+Add to your `~/.zshrc` (or `~/.bashrc`) to persist.
 
-### Option B: GNOME Keyring (most secure, works on GNOME/KDE/Hyprland)
+### Option B: macOS Keychain
 
 ```bash
-secret-tool store --label="MCP Gemini Web" service mcp-gemini-web account api-key
+security add-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w "your-key-here"
 ```
 
-Paste your key when prompted, then press `Ctrl+D`.
+To retrieve it later:
+
+```bash
+security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
+```
+
+> **Linux alternative:** Use GNOME Keyring with `secret-tool store --label="MCP Gemini Web" service mcp-gemini-web account api-key`.
 
 ### Option C: Local .env file (dev convenience)
 
@@ -213,18 +179,18 @@ If you see `PASS`, the Gemini integration works. If it fails, check your API key
 ### Option A: CLI (recommended)
 
 ```bash
-claude mcp add gemini-web ~/.local/share/mcp/gemini-web/start.sh
+claude mcp add -s user gemini-web -- ~/.local/share/mcp/gemini-web/start.sh
 ```
 
 ### Option B: Manual config
 
-Edit `~/.claude/settings.json` and add the MCP server block. The full file should look like this (merge with any existing content):
+Add to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "gemini-web": {
-      "command": "/home/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
+      "command": "/Users/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
     }
   }
 }
@@ -236,15 +202,22 @@ Verify registration:
 
 ```bash
 claude mcp list
+# gemini-web: ... - ✓ Connected
 ```
 
-You should see `gemini-web` listed.
+### Config file distinction
+
+| File | Purpose |
+|---|---|
+| `~/.claude.json` | MCP servers, user preferences |
+| `~/.claude/settings.json` | Hooks, security settings |
+| `.mcp.json` (project root) | Project-scoped MCP servers |
 
 ---
 
 ## Step 6 — Install Hooks
 
-Create the hooks directory and add three scripts:
+Create the hooks directory:
 
 ```bash
 mkdir -p ~/.claude/hooks
@@ -319,7 +292,70 @@ fi
 exit 0
 ```
 
-### Hook 3: `require-web-if-recency.sh`
+### Hook 3: `guard-sensitive-reads.sh`
+
+**Event:** `PreToolUse` (Read, Bash) — runs before file read operations.
+
+**What it does:** After untrusted web content has been loaded in a session, blocks reads of sensitive files (SSH keys, credentials, `.env` files, API tokens, etc.). This prevents prompt injection from web content exfiltrating credentials.
+
+Create `~/.claude/hooks/guard-sensitive-reads.sh`:
+
+```bash
+#!/usr/bin/env bash
+# PreToolUse hook (matchers: Read, Bash)
+# Blocks reads of sensitive files when untrusted web content is present in the session.
+# This prevents prompt injection from web content exfiltrating credentials.
+set -euo pipefail
+
+payload="$(cat)"
+tool_name="$(echo "$payload" | jq -r '.tool_name // ""')"
+transcript="$(echo "$payload" | jq -r '.transcript_path // ""')"
+
+# If we can't find the transcript, allow (fail-open)
+if [ -z "$transcript" ] || [ ! -f "$transcript" ]; then
+  exit 0
+fi
+
+# Only activate when untrusted web content has been loaded in this session
+if ! grep -qF -- '--- BEGIN UNTRUSTED WEB CONTENT ---' "$transcript" 2>/dev/null; then
+  exit 0
+fi
+
+# Sensitive path patterns (dotfiles, credentials, env files, keys)
+SENSITIVE_PATTERN='(\.ssh/|\.gnupg/|\.aws/|\.config/gcloud/|\.kube/|\.docker/config\.json|credentials|secret|\.pem$|\.key$|\.p12$|token|password|\.env$|\.env\.|\.claude/settings\.json)'
+
+deny() {
+  cat <<'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Blocked: reading sensitive files while untrusted web content is loaded in the session."
+  }
+}
+EOF
+  exit 0
+}
+
+if [ "$tool_name" = "Read" ]; then
+  file_path="$(echo "$payload" | jq -r '.tool_input.file_path // ""')"
+  if echo "$file_path" | grep -Eiq "$SENSITIVE_PATTERN"; then
+    deny
+  fi
+elif [ "$tool_name" = "Bash" ]; then
+  command="$(echo "$payload" | jq -r '.tool_input.command // ""')"
+  # Only inspect commands that read file contents
+  if echo "$command" | grep -Eiq '\b(cat|head|tail|less|more|base64|xxd|strings|od|hexdump|file|source|\.)\b'; then
+    if echo "$command" | grep -Eiq "$SENSITIVE_PATTERN"; then
+      deny
+    fi
+  fi
+fi
+
+exit 0
+```
+
+### Hook 4: `require-web-if-recency.sh`
 
 **Event:** `Stop` — runs before Claude finalizes a response.
 
@@ -391,7 +427,17 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/restrict-bash-network.sh",
+            "command": "/Users/YOUR_USER/.claude/hooks/restrict-bash-network.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/YOUR_USER/.claude/hooks/guard-sensitive-reads.sh",
             "timeout": 5
           }
         ]
@@ -402,7 +448,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/inject-web-search-hint.sh",
+            "command": "/Users/YOUR_USER/.claude/hooks/inject-web-search-hint.sh",
             "timeout": 5
           }
         ]
@@ -413,7 +459,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/require-web-if-recency.sh",
+            "command": "/Users/YOUR_USER/.claude/hooks/require-web-if-recency.sh",
             "timeout": 10
           }
         ]
@@ -487,7 +533,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 Open a new Claude Code session in the project directory:
 
 ```bash
-cd ~/documents/claude-orchestrator
+cd ~/Git/claude-orchestrator
 claude
 ```
 
@@ -528,7 +574,7 @@ The server registers one tool, `web_search`, which:
 
 Resolves the API key from three sources (in order):
 1. `GEMINI_API_KEY` environment variable
-2. GNOME Keyring via `secret-tool`
+2. macOS Keychain / GNOME Keyring via `secret-tool`
 3. Local `.env` file
 
 Then starts the server with `exec node server.mjs`.
@@ -569,43 +615,16 @@ Structured JSON logger that writes to **stderr only** (stdout is reserved for MC
 
 ### Hooks (`~/.claude/hooks/`)
 
-Three bash scripts that enforce the web access model at different lifecycle points:
+Four bash scripts that enforce the web access model at different lifecycle points:
 
 | Hook | Event | Purpose |
 |---|---|---|
 | `inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
 | `restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
+| `guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks sensitive file reads when untrusted web content is loaded |
 | `require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
 
 All hooks read JSON from stdin and write JSON to stdout. They exit 0 on success. The stop hook is soft enforcement — it's a best-effort guardrail, not a hard security boundary.
-
----
-
-## Security Model
-
-### Trust boundaries
-
-- **Claude Code** — local, trusted, does all reasoning and synthesis
-- **MCP Server** — local, trusted, controlled boundary to the internet
-- **Web content** — untrusted, always sanitized, always marked
-
-### Defenses
-
-| Layer | Defense |
-|---|---|
-| Input | Query sanitization, injection pattern detection, length limits |
-| Output | Script tag removal, HTML stripping, injection header removal, length caps, UNTRUSTED markers |
-| Network | Bash hook blocks direct network tools, all access routed through MCP |
-| Rate limiting | 30 requests/minute per process |
-| API key | Never exposed to Claude, resolved from keyring/env/.env |
-| Caching | Errors never cached, 5-minute TTL prevents stale data |
-
-### Known limitations
-
-- Hook keyword detection is bypassable via synonyms
-- Cannot verify that cited URLs are real or that they support the claims
-- Cache is in-memory only (lost on restart)
-- OpenAI provider is a stub and not yet functional
 
 ---
 
@@ -630,8 +649,8 @@ The launcher checks three sources in order. Make sure at least one is set:
 # Check environment
 echo $GEMINI_API_KEY
 
-# Check keyring
-secret-tool lookup service mcp-gemini-web account api-key
+# Check macOS Keychain
+security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
 
 # Check .env file
 cat ~/.local/share/mcp/gemini-web/.env

@@ -1,20 +1,16 @@
-
-
----
-
 # Claude Code MCP Bridge — Secure Local Orchestration
 
 ## Overview
 
-This project is designed to run **Claude Code locally as the primary orchestrator**, while delegating **internet access and external LLM API calls** to a controlled local boundary.
+This project runs **Claude Code locally as the primary orchestrator**, delegating internet access, code generation, and external LLM API calls to controlled local MCP (Model Context Protocol) servers.
 
 Claude Code is responsible for:
 
-* agent orchestration
-* workflows and hooks
-* reasoning, synthesis, and local automation
+* Agent orchestration
+* Workflows and hooks
+* Reasoning, synthesis, and local automation
 
-All interaction with the public internet or third-party model providers is routed through a **local MCP (Model Context Protocol) server** that is explicitly controlled and auditable.
+All interaction with the public internet or third-party model providers is routed through **local MCP servers** that are explicitly controlled and auditable.
 
 ---
 
@@ -32,56 +28,57 @@ All interaction with the public internet or third-party model providers is route
 
 ```
 User Intent
-   ↓
-Claude Code (local)
-   - agents
-   - hooks
-   - workflows
-   ↓
-MCP Server (local boundary)
-   - retrieval tools
-   - external LLM calls
-   ↓
-External Services
-   - Gemini (web search grounding)
-   - OpenAI (future)
+   |
+Claude Code (local orchestrator)
+   - agents, hooks, workflows
+   |
+   +---> Gemini MCP Server (stdio) --- Gemini API (web search)
+   |
+   +---> Codex MCP Server (stdio) ---- OpenAI API (code generation)
+   |
+   +---> Docker MCP Gateway ---------- Additional tools
 ```
 
-Claude Code never communicates directly with external services. All outbound access passes through the MCP server.
+Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
 
 ---
 
-## Explicit Internet Usage
+## MCP Servers
 
-Internet access is **never inferred**. It is triggered only by explicit user intent, using phrasing such as:
+### Gemini Web Search
 
-* “search the web”
-* “look on the internet”
-* “do some research”
-* “research online”
+| | |
+|---|---|
+| Purpose | Web search via Google Search grounding |
+| Auth | Gemini API key (env var) |
+| Transport | stdio |
+| Scope | Global (user) |
+| Status | Stable |
+
+Internet access is **never inferred**. It is triggered only by explicit user intent:
+
+* "search the web"
+* "look on the internet"
+* "do some research"
 * "do a deep dive on"
 
-When this intent is detected, a Claude Code hook injects a short instruction directing Claude to use a dedicated `web.search` tool.
+Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
-This is **soft enforcement**:
+### Codex CLI (Experimental)
 
-* the workflow continues if the tool fails
-* no hard blocking or retries are imposed
+| | |
+|---|---|
+| Purpose | Code generation and refactoring |
+| Auth | ChatGPT OAuth (no API key) |
+| Transport | stdio |
+| Scope | Global (user) |
+| Status | Experimental |
 
----
+Codex CLI v0.98.0 runs as an MCP server using the `mcp-server` subcommand. Authentication uses ChatGPT OAuth via `codex login` — no API keys needed. Requires a ChatGPT Pro plan ($20/month).
 
-## Web Access Model
+### Docker MCP Gateway
 
-* The MCP server exposes a `web.search` tool.
-* `web.search` is implemented using **Gemini with Google Search grounding**.
-* Returned data is **retrieval-only and sanitized**:
-
-  * short summaries
-  * source URLs
-  * brief excerpts or snippets
-* Raw HTML or full page content is not returned by default.
-
-Claude uses web results for synthesis only and does not treat them as trusted instructions.
+Additional tools exposed via Docker MCP gateway (Brave search, Wikipedia, Hacker News, Obsidian, Puppeteer, Git, etc.).
 
 ---
 
@@ -91,50 +88,44 @@ Claude uses web results for synthesis only and does not treat them as trusted in
 
 * Web content is treated as **untrusted input**
 * Claude Code remains local and isolated
-* External APIs are accessed only by the MCP server
+* External APIs are accessed only by MCP servers
+* Each MCP server has its own auth boundary
 
-### MCP Server Controls
+### Hooks
 
-* Runs locally
-* Has restricted filesystem access
-* Uses scoped API keys
-* Limits outbound network access to approved endpoints
+| Hook | Event | Purpose |
+|---|---|---|
+| `inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
+| `restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
+| `guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks reads of sensitive files when untrusted web content is loaded |
+| `require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
 
-This reduces exposure to:
+### Risks Mitigated
 
-* indirect prompt injection
-* unintended tool execution
-* credential leakage
-* data exfiltration via external services
+* Indirect prompt injection via web results
+* Unintended tool execution
+* Credential leakage via post-injection file reads
+* Data exfiltration via external services
+* Cross-contamination between web search and code generation
 
 ---
 
 ## Extensibility
 
-The MCP server is designed to grow without changing Claude Code workflows.
+The MCP server architecture grows without changing Claude Code workflows:
 
-Planned extensions include:
+* Provider routing based on task type
+* Response caching and deduplication
+* Structured logging and auditing
+* Rate limiting and backoff
 
-* OpenAI API integration for generation or specialized tasks
-* provider routing based on task type
-* response caching and deduplication
-* structured logging and auditing
-* rate limiting and backoff
-
-All provider-specific logic remains inside the MCP server.
+All provider-specific logic remains inside the MCP servers.
 
 ---
 
-## End State
+## Setup
 
-The final system provides:
-
-* local, controlled orchestration via Claude Code
-* explicit and auditable internet access
-* reduced exposure to untrusted inputs
-* a single, secure interface for multiple LLM providers
-
-This architecture prioritizes **clarity, security, and long-term flexibility** over convenience or implicit behavior.
+See **[SETUP.md](SETUP.md)** for the complete installation guide.
 
 ---
 
@@ -152,4 +143,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This project uses a project-root `CLAUDE.md` to declare the `web_search` tool, its usage rules, and the project structure. To apply these rules globally, copy the relevant sections to `~/.claude/CLAUDE.md`.
 
 ---
-
+*Last updated: 2026-02-10*
