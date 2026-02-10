@@ -1,0 +1,136 @@
+# Codex CLI — Reference Configuration for Sandboxed Operation
+#
+# This is a REFERENCE file. Copy the settings you need into ~/.codex/config.toml.
+# Lines starting with # are comments explaining each setting.
+#
+# Full docs: https://developers.openai.com/codex
+# Your actual config: ~/.codex/config.toml
+
+# ─────────────────────────────────────────────────────────────
+# MODEL SETTINGS
+# ─────────────────────────────────────────────────────────────
+
+# Which model Codex uses for code generation.
+# "gpt-5.2-codex" is optimized for agentic coding tasks.
+model = "gpt-5.2-codex"
+
+# How much "thinking" the model does. Lower = faster/cheaper, higher = better reasoning.
+# Options: "low", "medium", "high"
+model_reasoning_effort = "medium"
+
+# ─────────────────────────────────────────────────────────────
+# SANDBOX SETTINGS (the important part)
+# ─────────────────────────────────────────────────────────────
+
+# Default sandbox policy applied to every session.
+#
+# "read-only"           — Can read files, cannot write anywhere. No network.
+#                         Best for: code review, analysis, documentation.
+#
+# "workspace-write"     — Can read files, can write ONLY to cwd + TMPDIR. No network.
+#                         Best for: code edits, test writing, refactors. (RECOMMENDED)
+#
+# "danger-full-access"  — No sandbox. Full disk and network access.
+#                         Best for: tasks that need npm install, git push, etc.
+#                         Use sparingly, always with approval_policy = "untrusted".
+#
+sandbox_policy = "workspace-write"
+
+# Additional permissions to grant within the sandbox.
+# These expand what the sandbox allows. Empty = most restrictive.
+#
+# Available permissions:
+#   "disk-full-read-access"  — Allow reading any file (default in workspace-write)
+#   "disk-write-access"      — Allow writing anywhere (defeats sandbox purpose!)
+#   "network-access"         — Allow outbound network (defeats network isolation!)
+#
+# RECOMMENDATION: Leave this empty. If you need broader access, use a different
+# sandbox_policy instead of adding permissions here.
+sandbox_permissions = []
+
+# ─────────────────────────────────────────────────────────────
+# APPROVAL SETTINGS
+# ─────────────────────────────────────────────────────────────
+
+# When Codex must ask for human approval before running a command.
+#
+# "untrusted"    — Only auto-run safe commands (ls, cat, grep). Everything else asks.
+#                  MOST SECURE. Use with "danger-full-access" sandbox.
+#
+# "on-failure"   — Auto-run all commands. Only ask if a command fails.
+#                  Good with "workspace-write" — sandbox limits blast radius.
+#
+# "on-request"   — Auto-run all commands. Only ask if specifically requested.
+#
+# "never"        — Never ask. Fully autonomous.
+#                  Only safe with "read-only" or "workspace-write" sandbox.
+#
+approval_policy = "on-failure"
+
+# ─────────────────────────────────────────────────────────────
+# RECOMMENDED COMBINATIONS
+# ─────────────────────────────────────────────────────────────
+#
+# SAFE AUTONOMOUS (recommended for delegated tasks):
+#   sandbox_policy = "workspace-write"
+#   approval_policy = "on-failure"
+#   sandbox_permissions = []
+#
+# ANALYSIS ONLY (for code review / auditing):
+#   sandbox_policy = "read-only"
+#   approval_policy = "never"
+#   sandbox_permissions = []
+#
+# FULL ACCESS WITH GUARDRAILS (for installs, pushes):
+#   sandbox_policy = "danger-full-access"
+#   approval_policy = "untrusted"
+#   sandbox_permissions = []
+#
+# FIRE AND FORGET (equivalent to --full-auto):
+#   sandbox_policy = "workspace-write"
+#   approval_policy = "never"
+#   sandbox_permissions = []
+
+# ─────────────────────────────────────────────────────────────
+# SHELL ENVIRONMENT
+# ─────────────────────────────────────────────────────────────
+
+# Controls which environment variables Codex inherits from your shell.
+# "inherit = all" passes everything — convenient but may leak secrets.
+# Prefer explicit lists in production.
+[shell_environment_policy]
+inherit = "all"
+
+# ─────────────────────────────────────────────────────────────
+# PERSONALITY
+# ─────────────────────────────────────────────────────────────
+
+# Agent personality. Affects verbosity and communication style.
+# Options: "pragmatic", "concise", "pedagogical"
+personality = "pragmatic"
+
+# ─────────────────────────────────────────────────────────────
+# MCP SERVERS
+# ─────────────────────────────────────────────────────────────
+
+# MCP servers that Codex can use as tools.
+# These run as child processes communicating over stdio.
+
+[mcp_servers]
+
+# Docker MCP gateway — provides additional tools (Brave search, Git, etc.)
+# Only enable if you need these tools AND have Docker running.
+# [mcp_servers.MCP_DOCKER]
+# command = "docker"
+# args = ["mcp", "gateway", "run"]
+
+# ─────────────────────────────────────────────────────────────
+# PROJECT TRUST
+# ─────────────────────────────────────────────────────────────
+
+# Trust levels for specific directories.
+# "trusted"    — Codex can read AGENTS.md and operate normally
+# "untrusted"  — Codex prompts before reading project files
+
+# [projects."/Users/you/Git/my-project"]
+# trust_level = "trusted"

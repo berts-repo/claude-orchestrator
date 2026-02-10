@@ -1,0 +1,97 @@
+;;
+;; codex-network.sb -- Selective Network Access Profile for Codex CLI
+;;
+;; PURPOSE:
+;;   Same filesystem isolation as codex-strict.sb, but allows outbound
+;;   network connections. Use for tasks that need npm install, git push,
+;;   or API calls while still constraining filesystem access.
+;;
+;; DIFFERENCE FROM codex-strict.sb:
+;;   - Allows outbound TCP connections (HTTPS, git, npm)
+;;   - Allows DNS resolution
+;;   - Still blocks inbound connections (no reverse shells)
+;;   - Filesystem isolation is identical
+;;
+;; USAGE:
+;;   sandbox-exec -f codex-network.sb \
+;;     -D CWD=/path/to/repo -D TMPDIR=$TMPDIR -D HOME=$HOME \
+;;     codex -s danger-full-access "npm install && npm test"
+;;
+;; SECURITY NOTE:
+;;   This allows connections to ANY host. For domain-level filtering,
+;;   use a network firewall like Little Snitch alongside this profile.
+;;
+
+(version 1)
+(deny default)
+
+;; ===========================================================
+;; PROCESS, MACH, IPC, SIGNALS (same as codex-strict.sb)
+;; ===========================================================
+
+(allow process*)
+(allow mach*)
+(allow ipc*)
+(allow signal)
+(allow sysctl-read)
+
+;; ===========================================================
+;; FILESYSTEM (same as codex-strict.sb)
+;; ===========================================================
+
+;; Path resolution
+(allow file-read-metadata)
+
+;; System paths
+(allow file-read*
+    (literal "/")
+    (subpath "/usr")
+    (subpath "/bin")
+    (subpath "/sbin")
+    (subpath "/System")
+    (subpath "/Library")
+    (subpath "/private")
+    (subpath "/var")
+    (subpath "/etc")
+    (subpath "/dev")
+    (subpath "/opt")
+    (subpath "/tmp")
+    (subpath "/Applications"))
+
+;; Working directory and temp
+(allow file-read* (subpath (param "CWD")))
+(allow file-read* (subpath (param "TMPDIR")))
+
+;; Home directory with sensitive exclusions
+;; HOME is passed via -D HOME=$HOME (e.g., /Users/yourname)
+(allow file-read* (subpath "/Users"))
+(deny file-read* (subpath (string-append (param "HOME") "/.ssh")))
+(deny file-read* (subpath (string-append (param "HOME") "/.aws")))
+(deny file-read* (subpath (string-append (param "HOME") "/.gnupg")))
+(deny file-read* (subpath (string-append (param "HOME") "/.config/gcloud")))
+(deny file-read* (subpath (string-append (param "HOME") "/.codex")))
+(deny file-read* (subpath (string-append (param "HOME") "/.claude")))
+(deny file-read* (literal (string-append (param "HOME") "/.claude.json")))
+(allow file-read* (subpath (param "CWD")))
+
+;; Writes -- only CWD and TMPDIR
+(allow file-write* (subpath (param "CWD")))
+(allow file-write* (subpath (param "TMPDIR")))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (literal "/dev/null"))
+
+;; ===========================================================
+;; NETWORK -- Outbound allowed, inbound blocked
+;; ===========================================================
+;;
+;; KEY DIFFERENCE from codex-strict.sb:
+;; Allows outbound TCP so npm, git, and similar tools work.
+
+;; Allow outbound TCP (HTTPS, HTTP, git protocol)
+(allow network-outbound (remote tcp))
+
+;; Allow DNS resolution (UDP)
+(allow network-outbound (remote udp))
+
+;; Block all inbound connections
+(deny network-inbound)

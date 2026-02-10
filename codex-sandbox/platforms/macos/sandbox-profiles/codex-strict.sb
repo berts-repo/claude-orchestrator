@@ -1,0 +1,142 @@
+;;
+;; codex-strict.sb -- Strict Seatbelt Profile for Codex CLI
+;;
+;; PURPOSE:
+;;   Maximum isolation for Codex agent tasks. Blocks writes outside cwd,
+;;   blocks all network, and blocks reads of sensitive home directories.
+;;
+;; WHAT THIS BLOCKS:
+;;   - Writing anywhere except cwd and TMPDIR
+;;   - All network access (outbound and inbound)
+;;   - Reading sensitive home dotfiles (~/.ssh, ~/.aws, etc.)
+;;
+;; WHAT THIS ALLOWS:
+;;   - Reading system paths (/usr/, /System/, /Library/, /bin/, etc.)
+;;   - Reading most of the home directory (for .gitconfig, .npmrc, etc.)
+;;   - Reading and writing within the working directory
+;;   - Writing to TMPDIR
+;;   - Process execution, Mach IPC, signals
+;;
+;; USAGE:
+;;   sandbox-exec -f codex-strict.sb \
+;;     -D CWD=/path/to/repo -D TMPDIR=$TMPDIR -D HOME=$HOME \
+;;     codex -s danger-full-access "your task here"
+;;
+;;   NOTE: Use -s danger-full-access with Codex because THIS profile is the
+;;   real sandbox. Don't double-sandbox.
+;;
+;; HOW TO READ THIS FILE:
+;;   - (version 1)        -- required header
+;;   - (deny default)     -- start by blocking EVERYTHING, then allow specifics
+;;   - (allow ...)        -- each rule opens up a specific capability
+;;   - (subpath "/foo")   -- matches /foo and everything under it
+;;   - (literal "/foo")   -- matches exactly /foo, nothing else
+;;   - (param "X")        -- substitutes a parameter passed via -D X=value
+;;
+;; KEY LESSON (from testing):
+;;   Processes need (allow file-read-metadata) and (literal "/") to resolve
+;;   paths. Without these, even /bin/echo aborts because it can't traverse
+;;   the directory tree from root. The (allow file-read-metadata) permits
+;;   stat() calls (checking if a path exists, its type, permissions) which
+;;   is distinct from actually reading file contents.
+;;
+
+;; ===========================================================
+;; BASELINE: Deny everything by default
+;; ===========================================================
+
+(version 1)
+(deny default)
+
+;; ===========================================================
+;; PROCESS, MACH, IPC, SIGNALS
+;; ===========================================================
+;;
+;; Broad allows for process infrastructure. Safe because the real
+;; isolation comes from filesystem and network rules below.
+;; Individual Mach service listing is fragile across macOS versions.
+
+(allow process*)
+(allow mach*)
+(allow ipc*)
+(allow signal)
+(allow sysctl-read)
+
+;; ===========================================================
+;; FILESYSTEM READS -- Path resolution (REQUIRED)
+;; ===========================================================
+;;
+;; file-read-metadata allows stat() on any path. This is needed
+;; for the OS to traverse the directory tree (e.g., to find
+;; /bin/echo it must stat /, then /bin, then /bin/echo).
+;; This does NOT allow reading file contents -- only metadata
+;; (existence, type, permissions, size).
+
+(allow file-read-metadata)
+
+;; ===========================================================
+;; FILESYSTEM READS -- System paths + project
+;; ===========================================================
+;;
+;; Allow reading system libraries, binaries, config, and the project.
+;; (literal "/") allows reading the root directory listing itself.
+
+(allow file-read*
+    (literal "/")
+    (subpath "/usr")
+    (subpath "/bin")
+    (subpath "/sbin")
+    (subpath "/System")
+    (subpath "/Library")
+    (subpath "/private")
+    (subpath "/var")
+    (subpath "/etc")
+    (subpath "/dev")
+    (subpath "/opt")
+    (subpath "/tmp")
+    (subpath "/Applications"))
+
+;; Working directory and temp
+(allow file-read* (subpath (param "CWD")))
+(allow file-read* (subpath (param "TMPDIR")))
+
+;; ===========================================================
+;; FILESYSTEM READS -- Home directory (selective)
+;; ===========================================================
+;;
+;; Allow most home directory reads (for .gitconfig, .npmrc, etc.)
+;; then deny specific sensitive directories.
+;;
+;; In Seatbelt, LATER rules take precedence, so the deny rules
+;; override the broad allow.
+
+(allow file-read* (subpath "/Users"))
+
+;; Deny sensitive directories (override the allow above)
+;; HOME is passed via -D HOME=$HOME (e.g., /Users/yourname)
+(deny file-read* (subpath (string-append (param "HOME") "/.ssh")))
+(deny file-read* (subpath (string-append (param "HOME") "/.aws")))
+(deny file-read* (subpath (string-append (param "HOME") "/.gnupg")))
+(deny file-read* (subpath (string-append (param "HOME") "/.config/gcloud")))
+(deny file-read* (subpath (string-append (param "HOME") "/.codex")))
+(deny file-read* (subpath (string-append (param "HOME") "/.claude")))
+(deny file-read* (literal (string-append (param "HOME") "/.claude.json")))
+
+;; Re-allow CWD even if inside a denied path
+(allow file-read* (subpath (param "CWD")))
+
+;; ===========================================================
+;; FILESYSTEM WRITES -- Only CWD and TMPDIR
+;; ===========================================================
+
+(allow file-write* (subpath (param "CWD")))
+(allow file-write* (subpath (param "TMPDIR")))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (literal "/dev/null"))
+
+;; ===========================================================
+;; NETWORK -- Fully blocked
+;; ===========================================================
+
+(deny network-outbound)
+(deny network-inbound)

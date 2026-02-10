@@ -110,6 +110,20 @@ Additional tools exposed via Docker MCP gateway (Brave search, Wikipedia, Hacker
 
 ---
 
+## Codex Sandbox
+
+Codex CLI runs inside a **Seatbelt sandbox** on macOS — kernel-enforced isolation that restricts filesystem writes, network access, and sensitive file reads. This is the hard boundary that prevents agent escape, even if prompt injection occurs.
+
+| Mode | Writes | Network | Use case |
+|---|---|---|---|
+| `read-only` | None | No | Code review, analysis |
+| `workspace-write` | cwd only | No | Code edits, tests, refactors |
+| `danger-full-access` | Anywhere | Yes | Package installs, git push |
+
+See **[codex-sandbox/README.md](codex-sandbox/README.md)** for the full educational guide, custom Seatbelt profiles, and verification tests.
+
+---
+
 ## Extensibility
 
 The MCP server architecture grows without changing Claude Code workflows:
