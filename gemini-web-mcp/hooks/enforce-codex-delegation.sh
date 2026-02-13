@@ -20,7 +20,8 @@ EOF
 fi
 
 # Code review / security audit triggers
-if echo "$prompt" | grep -Eiq '(review (this |the )?code|security review|security audit|audit (this|the)|code review|check for (security |vulnerabilities|bugs))'; then
+# Matches: "review @path", "review ./path", "review this code", "code review", etc.
+if echo "$prompt" | grep -Eiq '(review (@|\.?/?[a-z])|review (this |the )?code|security review|security audit|audit (this|the)|code review|check for (security |vulnerabilities|bugs))'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
