@@ -7,7 +7,8 @@ payload="$(cat)"
 prompt="$(echo "$payload" | jq -r '.prompt // ""')"
 
 # Test generation triggers
-if echo "$prompt" | grep -Eiq '(write tests?|add tests?|generate tests?|create tests?|unit tests?|test coverage)'; then
+# Matches: "write tests", "add tests for @path", "test coverage", "integration tests", etc.
+if echo "$prompt" | grep -Eiq '(write tests?|add tests?|generate tests?|create tests?|unit tests?|tests? (for )?(@|\.?/?[a-z])|test coverage|improve.*coverage|integration tests?|regression tests?)'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
@@ -20,8 +21,8 @@ EOF
 fi
 
 # Code review / security audit triggers
-# Matches: "review @path", "review ./path", "review this code", "code review", etc.
-if echo "$prompt" | grep -Eiq '(review (@|\.?/?[a-z])|review (this |the )?code|security review|security audit|audit (this|the)|code review|check for (security |vulnerabilities|bugs))'; then
+# Matches: "review @path", "review ./path", "review this code", "PR review", "audit", etc.
+if echo "$prompt" | grep -Eiq '(review (@|\.?/?[a-z])|review (this |the )?(code|PR|pull request)|PR review|security review|security audit|audit (this|the|@)|code review|quality (check|review)|check for (security |vulnerabilities|bugs))'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
@@ -34,7 +35,8 @@ EOF
 fi
 
 # Refactoring triggers
-if echo "$prompt" | grep -Eiq '(refactor|clean up (this |the )?code|restructure|reorganize (this |the )?code)'; then
+# Matches: "refactor", "rename X to Y", "extract function", "migrate to async", "consolidate", etc.
+if echo "$prompt" | grep -Eiq '(refactor|rename .* to|extract (function|method|class|module|into)|clean up (this |the )?code|restructure|reorganize|migrate (to |from )|consolidate|move .* to)'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
@@ -47,7 +49,8 @@ EOF
 fi
 
 # Documentation triggers
-if echo "$prompt" | grep -Eiq '(document this|add docstrings?|generate docs?|add documentation|write documentation)'; then
+# Matches: "document @path", "add docstrings", "generate docs", "write documentation", etc.
+if echo "$prompt" | grep -Eiq '(document (this|the|@|\.?/?[a-z])|add (jsdoc|docstrings?|documentation)|generate docs?|write documentation|create (readme|docs)|api docs?)'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
