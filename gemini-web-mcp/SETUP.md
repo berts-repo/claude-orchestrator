@@ -1,8 +1,8 @@
-# Claude Code MCP Bridge — Setup Guide
+# Gemini Web Search MCP Server — Setup Guide
 
 This guide walks through the complete setup of the Gemini web search MCP server, including hooks and project configuration.
 
-For the overall architecture and design goals, see **[README.md](README.md)**.
+For the overall architecture and design goals, see the **[project README](../README.md)**.
 
 > **Scope:** This guide covers the Gemini web search server. Codex CLI and Docker MCP Gateway setup are documented separately.
 
@@ -28,10 +28,10 @@ For the overall architecture and design goals, see **[README.md](README.md)**.
 
 ## Prerequisites
 
-- **macOS** (tested on Darwin 25.2.0)
+- **Linux or macOS**
 - **Claude Code** — installed and working
 - **Node.js** — v20+
-- **jq** — used by hook scripts to parse JSON (`brew install jq` on macOS)
+- **jq** — used by hook scripts to parse JSON (`sudo pacman -S jq` on Arch, `brew install jq` on macOS)
 - **A Google Gemini API key** — free tier works
 
 ---
@@ -41,33 +41,30 @@ For the overall architecture and design goals, see **[README.md](README.md)**.
 After setup, these files will exist:
 
 ```
-~/.local/share/mcp/gemini-web/                        # MCP server
-  server.mjs                             # Main server — registers web_search tool
-  start.sh                               # Launcher — resolves API key, starts node
-  test-search.mjs                        # Standalone test (bypasses MCP transport)
-  package.json                           # Dependencies
-  .env                                   # API key (local dev, gitignored)
-  lib/
-    cache.mjs                            # In-memory LRU cache with TTL
-    logger.mjs                           # Structured JSON logger (writes to stderr)
-  providers/
-    index.mjs                            # Provider factory
-    base-provider.mjs                    # Abstract base class
-    gemini-provider.mjs                  # Gemini + Google Search implementation
-    openai-provider.mjs                  # Stub (not yet implemented)
+~/git/claude-orchestrator/gemini-web-mcp/             # Canonical server location
+  server/                                # Server code (runs from here)
+    server.mjs                           # Main server — registers web_search tool
+    start.sh                             # Launcher — resolves API key, starts node
+    test-search.mjs                      # Standalone test (bypasses MCP transport)
+    package.json                         # Dependencies
+    .env                                 # API key (local dev, gitignored)
+    lib/
+      cache.mjs                          # In-memory LRU cache with TTL
+      logger.mjs                         # Structured JSON logger (writes to stderr)
+    providers/
+      index.mjs                          # Provider factory
+      base-provider.mjs                  # Abstract base class
+      gemini-provider.mjs                # Gemini + Google Search implementation
+  hooks/                                 # Reference copies (runtime at ~/.claude/hooks/)
+    inject-web-search-hint.sh            # Detects "search the web" and injects context
+    restrict-bash-network.sh             # Blocks curl/wget/etc from Bash tool
+    require-web-if-recency.sh            # Blocks recency claims without source URLs
+  SETUP.md                               # This file
+  README.md                              # Overview and security analysis
 
 ~/.claude.json                           # MCP server registration
 ~/.claude/settings.json                  # Claude Code hooks and security settings
-~/.claude/hooks/
-  inject-web-search-hint.sh              # Detects "search the web" and injects context
-  restrict-bash-network.sh               # Blocks curl/wget/etc from Bash tool
-  guard-sensitive-reads.sh               # Blocks sensitive file reads after web content is loaded
-  require-web-if-recency.sh              # Blocks recency claims without source URLs
-
-~/Git/claude-orchestrator/               # Project repo
-  CLAUDE.md                              # Instructions Claude reads per-session
-  README.md                              # Architecture and design goals
-  SETUP.md                               # This file
+~/.claude/hooks/                         # Runtime hook scripts (symlinked or copied)
 ```
 
 ---
@@ -85,12 +82,13 @@ The free tier allows 15 requests/minute for `gemini-2.5-flash`, which is more th
 
 ## Step 2 — Set Up the MCP Server
 
+The server code lives in the repo at `gemini-web-mcp/server/`. Navigate there:
+
 ```bash
-mkdir -p ~/.local/share/mcp/gemini-web
-cd ~/.local/share/mcp/gemini-web
+cd ~/git/claude-orchestrator/gemini-web-mcp/server
 ```
 
-Copy all server files into this directory (see [File Map](#file-map) above for the full tree). Then install dependencies:
+Install dependencies:
 
 ```bash
 npm install
@@ -138,8 +136,8 @@ security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
 ### Option C: Local .env file (dev convenience)
 
 ```bash
-echo 'GEMINI_API_KEY=your-key-here' > ~/.local/share/mcp/gemini-web/.env
-chmod 600 ~/.local/share/mcp/gemini-web/.env
+echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/gemini-web-mcp/server/.env
+chmod 600 ~/git/claude-orchestrator/gemini-web-mcp/server/.env
 ```
 
 ---
@@ -149,7 +147,7 @@ chmod 600 ~/.local/share/mcp/gemini-web/.env
 This test calls the Gemini API directly, bypassing MCP transport, to confirm your key and network work:
 
 ```bash
-cd ~/.local/share/mcp/gemini-web
+cd ~/git/claude-orchestrator/gemini-web-mcp/server
 GEMINI_API_KEY="your-key" node test-search.mjs "latest Node.js release"
 ```
 
@@ -179,7 +177,7 @@ If you see `PASS`, the Gemini integration works. If it fails, check your API key
 ### Option A: CLI (recommended)
 
 ```bash
-claude mcp add -s user gemini-web -- ~/.local/share/mcp/gemini-web/start.sh
+claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
 ```
 
 ### Option B: Manual config
@@ -190,7 +188,7 @@ Add to `~/.claude.json`:
 {
   "mcpServers": {
     "gemini-web": {
-      "command": "/Users/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
+      "command": "/home/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
     }
   }
 }
@@ -427,7 +425,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/YOUR_USER/.claude/hooks/restrict-bash-network.sh",
+            "command": "/home/YOUR_USER/.claude/hooks/restrict-bash-network.sh",
             "timeout": 5
           }
         ]
@@ -437,7 +435,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/YOUR_USER/.claude/hooks/guard-sensitive-reads.sh",
+            "command": "/home/YOUR_USER/.claude/hooks/guard-sensitive-reads.sh",
             "timeout": 5
           }
         ]
@@ -448,7 +446,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/YOUR_USER/.claude/hooks/inject-web-search-hint.sh",
+            "command": "/home/YOUR_USER/.claude/hooks/inject-web-search-hint.sh",
             "timeout": 5
           }
         ]
@@ -459,7 +457,7 @@ Edit `~/.claude/settings.json` to include the hooks. The complete file should lo
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/YOUR_USER/.claude/hooks/require-web-if-recency.sh",
+            "command": "/home/YOUR_USER/.claude/hooks/require-web-if-recency.sh",
             "timeout": 10
           }
         ]
@@ -518,7 +516,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 
 ## Project Structure
 
-- `~/.local/share/mcp/gemini-web/` — MCP server (Node.js)
+- `~/git/claude-orchestrator/gemini-web-mcp/server/` — MCP server (Node.js)
   - `server.mjs` — Main server with `web_search` tool
   - `start.sh` — Launcher (sources API key, runs node)
   - `test-search.mjs` — Standalone test script
@@ -533,7 +531,7 @@ Search the web via Gemini with Google Search grounding. Returns a summary paragr
 Open a new Claude Code session in the project directory:
 
 ```bash
-cd ~/Git/claude-orchestrator
+cd ~/git/claude-orchestrator
 claude
 ```
 
@@ -653,14 +651,14 @@ echo $GEMINI_API_KEY
 security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
 
 # Check .env file
-cat ~/.local/share/mcp/gemini-web/.env
+cat ~/git/claude-orchestrator/gemini-web-mcp/server/.env
 ```
 
 ### Test script shows FAIL
 
 Run with debug output:
 ```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/.local/share/mcp/gemini-web/test-search.mjs "test query"
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/gemini-web-mcp/server/test-search.mjs "test query"
 ```
 
 Common causes:
@@ -687,5 +685,5 @@ The network blocker hook has some false positives (e.g., a variable named `curl_
 
 MCP server logs go to stderr as JSON. To see them:
 ```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/.local/share/mcp/gemini-web/server.mjs 2>&1 | jq '.'
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/gemini-web-mcp/server/server.mjs 2>&1 | jq '.'
 ```

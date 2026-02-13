@@ -35,8 +35,6 @@ Claude Code (local orchestrator)
    +---> Gemini MCP Server (stdio) --- Gemini API (web search)
    |
    +---> Codex MCP Server (stdio) ---- OpenAI API (code generation)
-   |
-   +---> Docker MCP Gateway ---------- Additional tools
 ```
 
 Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
@@ -50,10 +48,11 @@ Claude Code spawns each MCP server as a child process and communicates over stdi
 | | |
 |---|---|
 | Purpose | Web search via Google Search grounding |
-| Auth | Gemini API key (env var) |
+| Auth | Gemini API key (env var or keyring) |
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
+| Location | **[gemini-web-mcp/](gemini-web-mcp/)** |
 
 Internet access is **never inferred**. It is triggered only by explicit user intent:
 
@@ -63,6 +62,8 @@ Internet access is **never inferred**. It is triggered only by explicit user int
 * "do a deep dive on"
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
+
+See **[gemini-web-mcp/README.md](gemini-web-mcp/README.md)** for architecture, security model, and setup.
 
 ### Codex CLI (Experimental)
 
@@ -74,11 +75,7 @@ Returned data is retrieval-only: short summaries, source URLs, brief excerpts. R
 | Scope | Global (user) |
 | Status | Experimental |
 
-Codex CLI v0.98.0 runs as an MCP server using the `mcp-server` subcommand. Authentication uses ChatGPT OAuth via `codex login` — no API keys needed. Requires a ChatGPT Pro plan ($20/month).
-
-### Docker MCP Gateway
-
-Additional tools exposed via Docker MCP gateway (Brave search, Wikipedia, Hacker News, Obsidian, Puppeteer, Git, etc.).
+Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authentication uses ChatGPT OAuth via `codex login` — no API keys needed. Requires a ChatGPT Pro plan.
 
 ---
 
@@ -99,6 +96,8 @@ Additional tools exposed via Docker MCP gateway (Brave search, Wikipedia, Hacker
 | `restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
 | `guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks reads of sensitive files when untrusted web content is loaded |
 | `require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
+| `enforce-codex-delegation.sh` | UserPromptSubmit | Detects task types (tests, review, refactor, docs) and enforces Codex delegation |
+| `log-codex-delegation.sh` | PostToolUse (mcp__codex__codex) | Logs Codex delegations to `~/.claude/logs/codex-delegations.jsonl` |
 
 ### Risks Mitigated
 
@@ -112,7 +111,7 @@ Additional tools exposed via Docker MCP gateway (Brave search, Wikipedia, Hacker
 
 ## Codex Sandbox
 
-Codex CLI runs inside a **Seatbelt sandbox** on macOS — kernel-enforced isolation that restricts filesystem writes, network access, and sensitive file reads. This is the hard boundary that prevents agent escape, even if prompt injection occurs.
+Codex CLI runs inside OS-level sandboxes (Seatbelt on macOS, Bubblewrap on Linux) — kernel-enforced isolation that restricts filesystem writes, network access, and sensitive file reads. This is the hard boundary that prevents agent escape, even if prompt injection occurs.
 
 | Mode | Writes | Network | Use case |
 |---|---|---|---|
@@ -120,7 +119,20 @@ Codex CLI runs inside a **Seatbelt sandbox** on macOS — kernel-enforced isolat
 | `workspace-write` | cwd only | No | Code edits, tests, refactors |
 | `danger-full-access` | Anywhere | Yes | Package installs, git push |
 
-See **[codex-sandbox/README.md](codex-sandbox/README.md)** for the full educational guide, custom Seatbelt profiles, and verification tests.
+See **[codex-sandbox/README.md](codex-sandbox/README.md)** for sandbox configuration, custom profiles, and verification tests.
+
+## Codex Delegations
+
+When Claude Code delegates tasks to Codex via MCP, significant token savings are possible by offloading high-token, low-reasoning work.
+
+| Delegation Type | Token Savings | Guide |
+|---|---|---|
+| Test Generation | ~97% | [test-generation.md](codex-delegations/test-generation.md) |
+| Code Review | ~90% | [code-review.md](codex-delegations/code-review.md) |
+| Refactoring | ~85% | [refactoring.md](codex-delegations/refactoring.md) |
+| Documentation | ~95% | [documentation.md](codex-delegations/documentation.md) |
+
+See **[codex-delegations/README.md](codex-delegations/README.md)** for MCP tool reference and delegation patterns.
 
 ---
 
@@ -139,7 +151,8 @@ All provider-specific logic remains inside the MCP servers.
 
 ## Setup
 
-See **[SETUP.md](SETUP.md)** for the complete installation guide.
+- **Gemini Web Search:** See **[gemini-web-mcp/SETUP.md](gemini-web-mcp/SETUP.md)** for the complete installation guide.
+- **Codex Sandbox:** See **[codex-sandbox/README.md](codex-sandbox/README.md)** for sandbox configuration.
 
 ---
 
@@ -157,4 +170,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This project uses a project-root `CLAUDE.md` to declare the `web_search` tool, its usage rules, and the project structure. To apply these rules globally, copy the relevant sections to `~/.claude/CLAUDE.md`.
 
 ---
-*Last updated: 2026-02-10*
+*Last updated: 2026-02-13*

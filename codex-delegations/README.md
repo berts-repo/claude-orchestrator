@@ -1,35 +1,52 @@
 # Delegating Tasks from Claude Code to Codex (MCP Bridge)
 
+This directory contains delegation patterns for offloading work from Claude Code to Codex via MCP.
+
 ## How It Works
 
-Claude Code has Codex available as an MCP tool: `mcp__codex__codex`. When Claude calls this tool, it starts a Codex CLI session as a child process. The `sandbox` parameter controls what the Codex session can do.
+Claude Code has Codex available as MCP tools: `mcp__codex__codex` and `mcp__codex__codex-reply`. When Claude calls these tools, they communicate with the Codex MCP server running inside a sandbox.
 
 ```
 Claude Code (orchestrator)
     |
     | calls mcp__codex__codex with sandbox="workspace-write"
     v
-Codex CLI (worker, sandboxed)
+Codex MCP Server (sandboxed via Bubblewrap/Seatbelt)
     |
-    | executes in Seatbelt sandbox
+    | executes in isolated namespace
     | can only write to cwd
-    | no network access
+    | no network access (strict mode)
     v
 Returns results to Claude Code
 ```
 
 ---
 
-## MCP Tool Parameters
+## MCP Tools
 
-| Parameter | Type | Purpose |
-|---|---|---|
-| `prompt` | string | The task description for Codex |
-| `sandbox` | string | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
-| `approval-policy` | string | `"untrusted"`, `"on-failure"`, `"on-request"`, `"never"` |
-| `cwd` | string | Working directory (the target repo) |
-| `model` | string | Override model (default: from config.toml) |
-| `developer-instructions` | string | Extra instructions injected as developer role |
+### `mcp__codex__codex` — Start a new Codex session
+
+| Parameter | Type | Required | Purpose |
+|---|---|---|---|
+| `prompt` | string | **Yes** | The task description for Codex |
+| `sandbox` | string | No | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
+| `approval-policy` | string | No | `"untrusted"`, `"on-failure"`, `"on-request"`, `"never"` |
+| `cwd` | string | No | Working directory (the target repo) |
+| `model` | string | No | Override model (e.g., `"gpt-5.2"`, `"gpt-5.2-codex"`) |
+| `developer-instructions` | string | No | Extra instructions injected as developer role |
+| `base-instructions` | string | No | Replace default instructions entirely |
+| `profile` | string | No | Configuration profile from config.toml |
+
+**Returns:** `{ threadId: string, content: string }`
+
+### `mcp__codex__codex-reply` — Continue an existing conversation
+
+| Parameter | Type | Required | Purpose |
+|---|---|---|---|
+| `threadId` | string | **Yes** | Thread ID from previous codex call |
+| `prompt` | string | **Yes** | Follow-up prompt |
+
+**Returns:** `{ threadId: string, content: string }`
 
 ---
 
@@ -144,3 +161,24 @@ Step 3 - Claude reviews the diff and delegates polish:
 
 Step 4 - Claude presents the final result to the user.
 ```
+
+---
+
+## Task-Specific Guides
+
+For detailed templates and best practices for common delegation patterns:
+
+| Task Type | Guide | Token Savings |
+|---|---|---|
+| **Test Generation** | [test-generation.md](test-generation.md) | ~97% |
+| **Code Review** | [code-review.md](code-review.md) | ~90% |
+| **Refactoring** | [refactoring.md](refactoring.md) | ~85% |
+| **Documentation** | [documentation.md](documentation.md) | ~95% |
+
+---
+
+## Related
+
+- [Sandbox Configuration](../codex-sandbox/README.md) — OS-level isolation modes
+- [AGENTS.md Template](../codex-sandbox/AGENTS.md) — Runtime constraints for Codex
+- [config.toml Reference](../codex-sandbox/config.toml) — Codex configuration options

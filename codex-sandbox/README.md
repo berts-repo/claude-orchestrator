@@ -43,7 +43,7 @@ The built-in Codex modes cover most cases, but **custom OS-level profiles** prov
 | Platform | Technology | Status | Directory |
 |---|---|---|---|
 | **macOS** | [Seatbelt](https://developer.apple.com/documentation/security/app_sandbox) (`sandbox-exec`) | Ready | [`platforms/macos/`](platforms/macos/) |
-| **Linux** | TBD (Bubblewrap, Landlock, seccomp-bpf) | Planned | [`platforms/linux/`](platforms/linux/) |
+| **Linux** | [Bubblewrap](https://github.com/containers/bubblewrap) (`bwrap`) | Ready | [`platforms/linux/`](platforms/linux/) |
 
 Each platform directory contains:
 - `README.md` -- Platform-specific setup and usage
@@ -65,18 +65,15 @@ When you genuinely need network (installs, pushes), either:
 1. Use `danger-full-access` with `--ask-for-approval untrusted` (human approves each command)
 2. Use a custom profile that allows network but still isolates the filesystem
 
-## MCP Bridge -- Delegating from Claude Code
+## Delegation Patterns
 
-When Claude Code delegates a task to Codex via the MCP bridge (`mcp__codex__codex`), it should specify the sandbox mode:
+For delegating tasks from Claude Code to Codex via MCP, see the **[codex-delegations/](../codex-delegations/)** directory:
 
-| MCP parameter | CLI equivalent | Purpose |
-|---|---|---|
-| `sandbox: "read-only"` | `codex -s read-only` | Analysis, review |
-| `sandbox: "workspace-write"` | `codex -s workspace-write` | Code edits, tests |
-| `sandbox: "danger-full-access"` | `codex -s danger-full-access` | Network-requiring tasks |
-| `approval-policy: "untrusted"` | `codex -a untrusted` | Human approves each command |
-
-See [`examples/delegate-from-claude.md`](examples/delegate-from-claude.md) for detailed examples.
+- [Overview & MCP Tools](../codex-delegations/README.md)
+- [Test Generation](../codex-delegations/test-generation.md) (~97% token savings)
+- [Code Review](../codex-delegations/code-review.md) (~90% token savings)
+- [Refactoring](../codex-delegations/refactoring.md) (~85% token savings)
+- [Documentation](../codex-delegations/documentation.md) (~95% token savings)
 
 ## Layered Defense Model
 
@@ -110,7 +107,6 @@ codex-sandbox/
   AGENTS.md                      <-- Template instructions for Codex
   config.toml                    <-- Reference Codex configuration
   examples/
-    delegate-from-claude.md      <-- MCP delegation examples
     standalone-cli.md            <-- Direct CLI usage examples
   platforms/
     macos/                       <-- macOS Seatbelt sandbox
@@ -119,9 +115,13 @@ codex-sandbox/
       sandbox-profiles/
         codex-strict.sb          <-- Strict profile (no network, no sensitive reads)
         codex-network.sb         <-- Network-enabled profile
-    linux/                       <-- Linux sandbox (planned)
-      README.md                  <-- Linux status and plans
-      sandbox-profiles/          <-- Future profile files
+    linux/                       <-- Linux Bubblewrap sandbox
+      README.md                  <-- Linux-specific setup
+      sandbox-profiles/
+        codex-strict.sh          <-- Strict profile
+        codex-network.sh         <-- Network-enabled profile
+
+../codex-delegations/            <-- MCP delegation patterns (separate directory)
 ```
 
 ---

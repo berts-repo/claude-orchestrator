@@ -61,6 +61,47 @@ When your task is complete, provide:
 3. **Tests run** — Test command and pass/fail result
 4. **Risks / assumptions** — Anything the reviewer should know
 
+## Test Generation Guidelines
+
+When generating tests, follow these practices:
+
+### Detection
+1. **Detect the framework** — Check `package.json`, `pyproject.toml`, `Cargo.toml`, or existing test files
+2. **Match existing patterns** — Follow naming conventions and structure from existing tests
+3. **Find test config** — Look for `jest.config.*`, `vitest.config.*`, `pytest.ini`, etc.
+
+### Structure
+1. **File placement** — Put tests where the project expects them:
+   - `__tests__/` directory (JS/TS common)
+   - `*.test.ts` or `*.spec.ts` next to source (also common)
+   - `tests/` directory (Python, Rust)
+   - `*_test.go` next to source (Go)
+
+2. **Test naming** — Use descriptive names:
+   - `"validateEmail returns true for valid email"`
+   - `"validateEmail throws for empty string"`
+   - NOT: `"test1"`, `"it works"`
+
+3. **Coverage targets**:
+   - Happy path (normal operation)
+   - Edge cases (empty, null, boundaries)
+   - Error cases (invalid input, failures)
+   - Type variations (string vs number, etc.)
+
+### Execution
+1. **Always run tests** after generating them
+2. **Report coverage** if the framework supports it
+3. **Fix failures** before reporting done
+4. **Note untestable code** — If something can't be tested, explain why
+
+### Don'ts
+1. **Don't modify source files** — Only create/edit test files
+2. **Don't over-mock** — Use real implementations when possible
+3. **Don't test implementation details** — Test behavior, not internals
+4. **Don't create flaky tests** — Avoid timing, randomness, external calls
+
+---
+
 ## Commands Available
 
 The following commands are pre-approved for use:
@@ -69,8 +110,11 @@ The following commands are pre-approved for use:
 # Testing
 npm test
 npm run test
+npm test -- --coverage
 pytest
+pytest --cov
 go test ./...
+go test -v -cover ./...
 cargo test
 
 # Linting / formatting

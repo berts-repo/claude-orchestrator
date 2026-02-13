@@ -91,12 +91,27 @@ BWRAP_ARGS=(
 )
 
 # Handle optional system paths that may or may not exist
-[[ -d /bin ]] && BWRAP_ARGS+=(--ro-bind /bin /bin)
-[[ -d /lib ]] && BWRAP_ARGS+=(--ro-bind /lib /lib)
-[[ -d /lib64 ]] && BWRAP_ARGS+=(--ro-bind /lib64 /lib64)
-[[ -d /lib32 ]] && BWRAP_ARGS+=(--ro-bind /lib32 /lib32)
-[[ -d /sbin ]] && BWRAP_ARGS+=(--ro-bind /sbin /sbin)
-[[ -d /opt ]] && BWRAP_ARGS+=(--ro-bind /opt /opt)
+# On modern distros (Arch, Fedora), /bin /lib /sbin are symlinks to /usr/*
+# We need to use --symlink for symlinks, --ro-bind for real directories
+bind_or_symlink() {
+    local path="$1"
+    if [[ -L "$path" ]]; then
+        # It's a symlink - recreate it inside sandbox
+        local target
+        target=$(readlink "$path")
+        BWRAP_ARGS+=(--symlink "$target" "$path")
+    elif [[ -d "$path" ]]; then
+        # It's a real directory - bind mount it
+        BWRAP_ARGS+=(--ro-bind "$path" "$path")
+    fi
+}
+
+bind_or_symlink /bin
+bind_or_symlink /lib
+bind_or_symlink /lib64
+bind_or_symlink /lib32
+bind_or_symlink /sbin
+bind_or_symlink /opt
 
 BWRAP_ARGS+=(
     # ── Device and proc ──
