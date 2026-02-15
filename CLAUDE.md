@@ -62,18 +62,40 @@ Delegate code-heavy tasks to Codex running in a sandbox. Returns a threadId and 
 4. Claude reviews output and delegates follow-up if needed
 5. Claude presents final result to user
 
+**Large diffs:** When `git diff` output exceeds 100 lines, delegate to Codex with `sandbox: read-only` to summarize changes before presenting to the user.
+
+## Blocked Subagents — DO NOT USE
+
+The following Task subagents are blocked. Always use Codex instead:
+
+| DO NOT USE | Use Instead |
+|------------|-------------|
+| `Explore` | `mcp__codex__codex` with `sandbox: "read-only"` |
+| `test_gen` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
+| `doc_comments` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
+| `diff_digest` | `mcp__codex__codex` with `sandbox: "read-only"` |
+
+**Why:** These subagents return full content to your context. Codex processes externally and returns only a summary, saving 90-97% tokens.
+
 See `codex-delegations/` for detailed templates and examples.
 
 ---
 
 ## Project Structure
 
+Always update the project structure according to what project you are working on. 
+
+- `security-hooks/` — General security hooks (symlinked from `~/.claude/hooks/`)
+  - `guard-sensitive-reads.sh` — Blocks reads of sensitive files
+  - `restrict-bash-network.sh` — Blocks direct network access via Bash
 - `gemini-web-mcp/` — Gemini web search MCP server
   - `server/` — Server code (runs from here)
     - `server.mjs` — Main server with `web_search` tool
     - `start.sh` — Launcher (sources API key, runs node)
     - `test-search.mjs` — Standalone test script
-  - `hooks/` — Reference copies of enforcement hooks
+  - `hooks/` — Web search enforcement hooks
+    - `inject-web-search-hint.sh` — Injects hint when user requests web access
+    - `require-web-if-recency.sh` — Validates web_search was used for current info
 - `codex-sandbox/` — Codex MCP server with OS-level sandboxing
   - `platforms/` — Platform-specific sandbox profiles (Linux/macOS)
   - `AGENTS.md` — Runtime constraints for Codex
@@ -83,5 +105,12 @@ See `codex-delegations/` for detailed templates and examples.
   - `refactoring.md` — Refactoring delegation
   - `documentation.md` — Documentation generation
   - `templates/` — Reusable prompt templates
-- `~/.claude/hooks/` — Runtime enforcement hook scripts
+  - `hooks/` — Codex delegation hooks
+    - `inject-codex-hint.sh` — Soft hint for delegation patterns (UserPromptSubmit)
+    - `block-explore-for-codex.sh` — Hard block on Explore subagent (PreToolUse)
+    - `block-test-gen-for-codex.sh` — Hard block on test_gen subagent (PreToolUse)
+    - `block-doc-comments-for-codex.sh` — Hard block on doc_comments subagent (PreToolUse)
+    - `block-diff-digest-for-codex.sh` — Hard block on diff_digest subagent (PreToolUse)
+    - `log-codex-delegation.sh` — Audit logging (PostToolUse)
+- `~/.claude/hooks/` — Symlinks to project hooks (runtime location)
 - `~/.claude.json` — MCP server registration

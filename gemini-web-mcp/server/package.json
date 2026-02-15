@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node test-search.mjs",
-    "test:unit": "vitest run server.test.mjs"
+    "test:unit": "vitest run server.test.mjs server.unit.test.mjs"
   },
   "license": "ISC",
   "dependencies": {

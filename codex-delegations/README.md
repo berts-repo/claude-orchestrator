@@ -174,6 +174,25 @@ For detailed templates and best practices for common delegation patterns:
 | **Code Review** | [code-review.md](code-review.md) | ~90% |
 | **Refactoring** | [refactoring.md](refactoring.md) | ~85% |
 | **Documentation** | [documentation.md](documentation.md) | ~95% |
+| **Diff Summarization** | Codex `read-only` | ~95% |
+| **Codebase Exploration** | Codex `read-only` | ~90% |
+
+---
+
+## Enforced Delegations (Blocked Subagents)
+
+These Claude Code subagents are blocked via PreToolUse hooks and must be delegated to Codex instead:
+
+| Subagent | Why Blocked | Codex Replacement |
+|---|---|---|
+| `Explore` | Returns full findings to Claude's context | `read-only`, `never` |
+| `test_gen` | Only creates skeletons with TODO assertions | `workspace-write`, `on-failure` |
+| `doc_comments` | Only generates text, can't write files | `workspace-write`, `on-failure` |
+| `diff_digest` | Summary consumes Claude's context | `read-only`, `never` |
+
+**Token preservation:** These subagents process files within Claude's context window. By delegating to Codex, the file contents stay external — only the summary returns to Claude, saving 90-97% of tokens.
+
+See [hooks/README.md](hooks/README.md) for hook configuration.
 
 ---
 

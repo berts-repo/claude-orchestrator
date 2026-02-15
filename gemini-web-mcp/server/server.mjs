@@ -18,6 +18,10 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 
 const rateLimiter = {
   timestamps: [],
+  /**
+   * @description Checks whether the current request is within the configured sliding window rate limit and records the request timestamp when allowed.
+   * @returns {boolean} Returns `true` when the request is allowed and `false` when the rate limit is exceeded.
+   */
   check() {
     const now = Date.now();
     this.timestamps = this.timestamps.filter(
@@ -34,6 +38,11 @@ const rateLimiter = {
 const INJECTION_PATTERNS =
   /\b(ignore previous|ignore above|disregard|you are now|new instructions|system prompt|execute|run command|sudo|bash -c)\b/i;
 
+/**
+ * @description Sanitizes a raw user query by trimming whitespace, removing control characters and HTML tags, normalizing spacing, and enforcing max length.
+ * @param {string} raw - The raw user-provided search query text.
+ * @returns {string} Returns a cleaned query string suitable for provider search.
+ */
 function sanitizeQuery(raw) {
   let q = raw.trim();
   q = q.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
@@ -45,6 +54,11 @@ function sanitizeQuery(raw) {
   return q;
 }
 
+/**
+ * @description Sanitizes provider response text by removing scripts and HTML tags, filtering known instruction-like patterns, and truncating oversized output.
+ * @param {string} text - The raw response text returned by the provider.
+ * @returns {string} Returns sanitized response text safe to wrap in untrusted content markers.
+ */
 function sanitizeResponse(text) {
   let t = text;
   t = t.replace(/<script[\s\S]*?<\/script>/gi, "");
@@ -94,6 +108,13 @@ server.registerTool(
         .default(5),
     },
   },
+  /**
+   * @description Executes the web search tool flow, including rate limiting, query sanitization and filtering, cache lookup, provider search, response sanitization, and error mapping.
+   * @param {{ query: string, max_results: number }} input - Tool input containing the search query and maximum number of desired results.
+   * @param {string} input.query - The user query to execute against the configured search provider.
+   * @param {number} input.max_results - The maximum number of sources to request from the provider.
+   * @returns {Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>} Returns a tool result payload containing response text and optional error status.
+   */
   async ({ query, max_results }) => {
     // Rate limit
     if (!rateLimiter.check()) {
