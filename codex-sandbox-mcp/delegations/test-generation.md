@@ -271,4 +271,4 @@ Before delegating test generation, Claude should:
 
 ---
 
-Related: [sandbox config](../codex-sandbox/config.toml) | [templates](templates/)
+Related: [sandbox config](../config.toml) | [templates](templates/)

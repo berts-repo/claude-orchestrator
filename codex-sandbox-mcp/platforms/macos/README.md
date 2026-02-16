@@ -78,7 +78,7 @@ sandbox-exec \
 Run the verification script to confirm your sandbox is working:
 
 ```bash
-cd codex-sandbox/platforms/macos/
+cd codex-sandbox-mcp/platforms/macos/
 chmod +x test-sandbox.sh
 ./test-sandbox.sh
 ```

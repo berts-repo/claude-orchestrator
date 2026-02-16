@@ -14,7 +14,7 @@
 #   5. Network profile   — CAN make network requests, still can't write outside
 #
 # USAGE:
-#   cd codex-sandbox/platforms/linux/
+#   cd codex-sandbox-mcp/platforms/linux/
 #   chmod +x test-sandbox.sh sandbox-profiles/*.sh
 #   ./test-sandbox.sh
 #

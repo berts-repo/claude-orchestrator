@@ -199,4 +199,4 @@ Running batch 1, will verify tests before proceeding..."
 
 ---
 
-Related: [sandbox config](../codex-sandbox/config.toml) | [templates](templates/refactoring.txt)
+Related: [sandbox config](../config.toml) | [templates](templates/refactoring.txt)

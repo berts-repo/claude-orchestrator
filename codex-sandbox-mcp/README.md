@@ -67,13 +67,13 @@ When you genuinely need network (installs, pushes), either:
 
 ## Delegation Patterns
 
-For delegating tasks from Claude Code to Codex via MCP, see the **[codex-delegations/](../codex-delegations/)** directory:
+For delegating tasks from Claude Code to Codex via MCP, see the **[codex-sandbox-mcp/delegations/](./delegations/)** directory:
 
-- [Overview & MCP Tools](../codex-delegations/README.md)
-- [Test Generation](../codex-delegations/test-generation.md) (~97% token savings)
-- [Code Review](../codex-delegations/code-review.md) (~90% token savings)
-- [Refactoring](../codex-delegations/refactoring.md) (~85% token savings)
-- [Documentation](../codex-delegations/documentation.md) (~95% token savings)
+- [Overview & MCP Tools](./delegations/README.md)
+- [Test Generation](./delegations/test-generation.md) (~97% token savings)
+- [Code Review](./delegations/code-review.md) (~90% token savings)
+- [Refactoring](./delegations/refactoring.md) (~85% token savings)
+- [Documentation](./delegations/documentation.md) (~95% token savings)
 
 ## Layered Defense Model
 
@@ -102,7 +102,7 @@ See [`AGENTS.md`](AGENTS.md) for a template of soft guardrails to place in proje
 ## File Map
 
 ```
-codex-sandbox/
+codex-sandbox-mcp/
   README.md                      <-- You are here
   AGENTS.md                      <-- Template instructions for Codex
   config.toml                    <-- Reference Codex configuration
@@ -121,7 +121,7 @@ codex-sandbox/
         codex-strict.sh          <-- Strict profile
         codex-network.sh         <-- Network-enabled profile
 
-../codex-delegations/            <-- MCP delegation patterns (separate directory)
+./delegations/            <-- MCP delegation patterns (separate directory)
 ```
 
 ---

@@ -2,6 +2,24 @@
 #
 # These templates show how to fan out multiple MCP calls in a single message.
 # Copy and adapt the relevant pattern for your use case.
+#
+# ============================================================================
+# Decomposition Quick Reference
+# ============================================================================
+#
+# Task Type           | Recommended Axis | Example Split
+# --------------------|------------------|-------------------------------------
+# Code review         | By concern       | Security + bugs + quality
+# Test generation     | By module        | Tests for auth/ + tests for api/
+# Documentation       | By module        | Docs for module A + docs for module B
+# Refactoring         | By action        | Gemini research + Codex analysis (read-only) -> then Codex write
+# Security audit      | By concern       | OWASP top 10 + dependency audit + secrets scan
+# Codebase analysis   | By concern       | Architecture + dependencies + code quality
+#
+# Add a Gemini web_search call when:
+#   - Framework/language has evolving best practices
+#   - User mentions "best practices", "modern", "latest"
+#   - Code touches security-sensitive patterns (auth, crypto, payments)
 
 # ============================================================================
 # Pattern 1: Multi-Aspect Review (3x read-only Codex)
@@ -133,6 +151,72 @@ Tool: mcp__codex__codex
 
 ## Fan-in: Claude cross-references web research with audit findings,
 ## verifies test coverage addresses known vulnerability patterns.
+
+
+# ============================================================================
+# Pattern 5: Multi-Module Documentation (2x workspace-write Codex)
+# ============================================================================
+# Use when: User asks to document multiple independent modules.
+# ONLY safe when target directories do not overlap.
+# Both calls go in ONE message.
+
+## Call 1 — Module A Docs
+Tool: mcp__codex__codex
+  prompt: |
+    Generate documentation for {MODULE_A_PATH}.
+    Add JSDoc/docstrings to all exported functions and classes.
+    Include usage examples where helpful.
+    Run '{LINT_COMMAND}' to verify no syntax errors.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
+
+## Call 2 — Module B Docs
+Tool: mcp__codex__codex
+  prompt: |
+    Generate documentation for {MODULE_B_PATH}.
+    Add JSDoc/docstrings to all exported functions and classes.
+    Include usage examples where helpful.
+    Run '{LINT_COMMAND}' to verify no syntax errors.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
+
+
+# ============================================================================
+# Pattern 6: Research-First Refactoring (Gemini + Codex read-only -> Codex write)
+# ============================================================================
+# Use when: User asks to refactor code and best practices matter.
+# Phase 1 (parallel): Gemini researches patterns + Codex analyzes current code.
+# Phase 2 (sequential): Codex applies refactoring based on combined findings.
+
+## Phase 1, Call 1 — Web Research (parallel)
+Tool: mcp__gemini_web__web_search
+  query: "{LANGUAGE} {PATTERN} best practices 2026"
+  max_results: 5
+
+## Phase 1, Call 2 — Codex Analysis (parallel, read-only)
+Tool: mcp__codex__codex
+  prompt: |
+    Analyze {TARGET_PATH} for refactoring opportunities.
+    Identify: code smells, duplicated logic, unclear abstractions,
+    and violations of {LANGUAGE} conventions.
+    Report as a prioritized list with suggested changes.
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+## Fan-in: Claude synthesizes research + analysis into a refactoring plan.
+
+## Phase 2 — Codex Refactoring (sequential, after phase 1 completes)
+Tool: mcp__codex__codex
+  prompt: |
+    Refactor {TARGET_PATH} applying these changes:
+    {SYNTHESIZED_PLAN_FROM_PHASE_1}
+    Run '{TEST_COMMAND}' to verify nothing breaks.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
 
 
 # ============================================================================

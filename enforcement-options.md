@@ -396,6 +396,6 @@ New hooks should be added to `~/.claude/settings.json`:
 And symlinked from the project:
 
 ```bash
-ln -sf ~/git/claude-orchestrator/codex-delegations/hooks/block-test-file-writes.sh \
+ln -sf ~/git/claude-orchestrator/codex-sandbox-mcp/delegations/hooks/block-test-file-writes.sh \
        ~/.claude/hooks/block-test-file-writes.sh
 ```

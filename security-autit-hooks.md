@@ -35,12 +35,12 @@ Reviewed hook files:
 | `security-hooks/` | `guard-sensitive-reads.sh` |
 | `gemini-web-mcp/hooks/` | `require-web-if-recency.sh` |
 | `gemini-web-mcp/hooks/` | `inject-web-search-hint.sh` |
-| `codex-delegations/hooks/` | `block-explore-for-codex.sh` |
-| `codex-delegations/hooks/` | `block-test-gen-for-codex.sh` |
-| `codex-delegations/hooks/` | `block-doc-comments-for-codex.sh` |
-| `codex-delegations/hooks/` | `block-diff-digest-for-codex.sh` |
-| `codex-delegations/hooks/` | `inject-codex-hint.sh` |
-| `codex-delegations/hooks/` | `log-codex-delegation.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `block-explore-for-codex.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `block-test-gen-for-codex.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `block-doc-comments-for-codex.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `block-diff-digest-for-codex.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `inject-codex-hint.sh` |
+| `codex-sandbox-mcp/delegations/hooks/` | `log-codex-delegation.sh` |
 
 ---
 
@@ -438,10 +438,10 @@ Sensitive data may be read if link target changes post-check/pre-use.
 | Field | Value |
 |-------|-------|
 | **Severity** | Medium |
-| **Affected File(s)** | `codex-delegations/hooks/block-explore-for-codex.sh:8-10` |
-| | `codex-delegations/hooks/block-test-gen-for-codex.sh:8-10` |
-| | `codex-delegations/hooks/block-doc-comments-for-codex.sh:8-10` |
-| | `codex-delegations/hooks/block-diff-digest-for-codex.sh:8-10` |
+| **Affected File(s)** | `codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh:8-10` |
+| | `codex-sandbox-mcp/delegations/hooks/block-test-gen-for-codex.sh:8-10` |
+| | `codex-sandbox-mcp/delegations/hooks/block-doc-comments-for-codex.sh:8-10` |
+| | `codex-sandbox-mcp/delegations/hooks/block-diff-digest-for-codex.sh:8-10` |
 | **CVSS Justification** | High exploitability, policy bypass |
 
 #### Description
@@ -462,7 +462,7 @@ The value `" explore "` (with spaces) does not equal `"explore"`.
 **PoC 1: Leading/Trailing Whitespace**
 ```bash
 env CLAUDE_TOOL_INPUT='{"subagent_type":" explore "}' \
-bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
 # Observed: {"decision":"allow"}
 # Expected: {"decision":"block",...}
 ```
@@ -470,14 +470,14 @@ bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"
 **PoC 2: Tab Characters**
 ```bash
 env CLAUDE_TOOL_INPUT='{"subagent_type":"\texplore\t"}' \
-bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
 # Observed: {"decision":"allow"}
 ```
 
 **PoC 3: Newline Injection**
 ```bash
 env CLAUDE_TOOL_INPUT='{"subagent_type":"explore\n"}' \
-bash codex-delegations/hooks/block-test-gen-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-test-gen-for-codex.sh <<< '{"tool_name":"Task"}'
 # Observed: {"decision":"allow"}
 ```
 
@@ -498,10 +498,10 @@ Hard-block policy on disallowed subagents can be bypassed, allowing use of Explo
 | Field | Value |
 |-------|-------|
 | **Severity** | High |
-| **Affected File(s)** | `codex-delegations/hooks/block-explore-for-codex.sh:3,8` |
-| | `codex-delegations/hooks/block-test-gen-for-codex.sh:3,8` |
-| | `codex-delegations/hooks/block-doc-comments-for-codex.sh:3,8` |
-| | `codex-delegations/hooks/block-diff-digest-for-codex.sh:3,8` |
+| **Affected File(s)** | `codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh:3,8` |
+| | `codex-sandbox-mcp/delegations/hooks/block-test-gen-for-codex.sh:3,8` |
+| | `codex-sandbox-mcp/delegations/hooks/block-doc-comments-for-codex.sh:3,8` |
+| | `codex-sandbox-mcp/delegations/hooks/block-diff-digest-for-codex.sh:3,8` |
 | **CVSS Justification** | Single-condition bypass if runtime treats hook failure as non-blocking |
 
 #### Description
@@ -521,14 +521,14 @@ When `CLAUDE_TOOL_INPUT` is unset, bash exits immediately with "unbound variable
 
 ```bash
 unset CLAUDE_TOOL_INPUT
-bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
 # Observed: line 8: CLAUDE_TOOL_INPUT: unbound variable
 # Exit code: 1
 # No JSON output emitted
 ```
 
 ```bash
-bash codex-delegations/hooks/block-test-gen-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-test-gen-for-codex.sh <<< '{"tool_name":"Task"}'
 # Observed: line 8: CLAUDE_TOOL_INPUT: unbound variable
 # Exit code: 1
 ```
@@ -556,9 +556,9 @@ Hook stops enforcing block logic due to environment shape mismatch. If the hook 
 | | `security-hooks/guard-sensitive-reads.sh:9,33,54` |
 | | `gemini-web-mcp/hooks/require-web-if-recency.sh:13` |
 | | `gemini-web-mcp/hooks/inject-web-search-hint.sh:8` |
-| | `codex-delegations/hooks/block-*.sh:5` |
-| | `codex-delegations/hooks/inject-codex-hint.sh:7` |
-| | `codex-delegations/hooks/log-codex-delegation.sh:15` |
+| | `codex-sandbox-mcp/delegations/hooks/block-*.sh:5` |
+| | `codex-sandbox-mcp/delegations/hooks/inject-codex-hint.sh:7` |
+| | `codex-sandbox-mcp/delegations/hooks/log-codex-delegation.sh:15` |
 | **CVSS Justification** | Medium likelihood, high impact (complete bypass) |
 
 #### Description
@@ -774,11 +774,11 @@ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"cat /home/me/work/../.
 
 # HOOK-SEC-007: Subagent bypass via whitespace
 env CLAUDE_TOOL_INPUT='{"subagent_type":" explore "}' \
-bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
 
 # HOOK-SEC-008: Subagent bypass via unset env var
 unset CLAUDE_TOOL_INPUT
-bash codex-delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
+bash codex-sandbox-mcp/delegations/hooks/block-explore-for-codex.sh <<< '{"tool_name":"Task"}'
 
 # HOOK-SEC-009: Bypass via malformed JSON
 printf '%s' '{bad-json' | bash security-hooks/restrict-bash-network.sh

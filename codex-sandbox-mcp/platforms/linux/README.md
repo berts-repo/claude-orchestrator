@@ -103,7 +103,7 @@ CWD=/path/to/repo ./sandbox-profiles/codex-strict.sh codex -s danger-full-access
 Run the verification script to confirm your sandbox is working:
 
 ```bash
-cd codex-sandbox/platforms/linux/
+cd codex-sandbox-mcp/platforms/linux/
 chmod +x test-sandbox.sh sandbox-profiles/*.sh
 ./test-sandbox.sh
 ```

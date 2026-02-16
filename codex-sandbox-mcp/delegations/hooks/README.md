@@ -13,6 +13,10 @@ Detects task patterns that should be delegated to Codex and injects guidance:
 - Code review / security audit → `sandbox: read-only`
 - Refactoring → `sandbox: workspace-write`
 - Documentation → `sandbox: workspace-write`
+- Changelog generation → `sandbox: read-only`
+- Error / stack trace analysis → `sandbox: read-only`
+- Lint / format fixing → `sandbox: workspace-write`
+- Dependency audit → `sandbox: read-only` + Gemini web_search
 
 ### `block-explore-for-codex.sh`
 **Event:** `PreToolUse` (Task)

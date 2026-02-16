@@ -13,7 +13,7 @@
 #   4. Legitimate ops    — CAN read/write within the working directory
 #
 # USAGE:
-#   cd codex-sandbox/platforms/macos/
+#   cd codex-sandbox-mcp/platforms/macos/
 #   chmod +x test-sandbox.sh
 #   ./test-sandbox.sh
 #

@@ -100,7 +100,42 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `block-test-gen-for-codex.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `block-doc-comments-for-codex.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
 | `block-diff-digest-for-codex.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `log-codex-delegation.sh` | PostToolUse (mcp__codex__codex) | Logs Codex delegations to `~/.claude/logs/codex-delegations.jsonl` |
+| `log-codex-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+
+### Audit Logging
+
+Codex and Gemini delegations are automatically logged by the `log-codex-delegation.sh` PostToolUse hook.
+
+**Summary index** — `~/.claude/logs/delegations.jsonl`
+- Short identifying summary (first line of prompt, truncated to 80 chars)
+- Metadata: timestamp, tool, sandbox mode, threadId, success
+- `detail` field points to the full prompt/response file
+- FIFO rotation keeps the last 100 entries
+
+**Detail files** — `~/.claude/logs/details/`
+- Codex: `{threadId}.jsonl` — one line per turn, preserving multi-turn conversation chains
+- Gemini: `gemini-{epoch}-{pid}.jsonl` — one entry per call
+- Auto-deleted after 30 days (time-based retention)
+
+**Cleanup** — run `/log-cleanup` to:
+- Remove orphaned detail files not referenced by the summary index
+- Remove expired detail files (30+ days)
+- Clean up stale summary entries
+- Report disk usage
+
+### Slash Commands
+
+Global slash commands are installed to `~/.claude/commands/`:
+
+| Command | Purpose |
+|---|---|
+| `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
+
+```bash
+# Install (included in Quick Start)
+mkdir -p ~/.claude/commands
+cp slash-commands/*.md ~/.claude/commands/
+```
 
 ### Risks Mitigated
 
@@ -122,7 +157,7 @@ Codex CLI runs inside OS-level sandboxes (Seatbelt on macOS, Bubblewrap on Linux
 | `workspace-write` | cwd only | No | Code edits, tests, refactors |
 | `danger-full-access` | Anywhere | Yes | Package installs, git push |
 
-See **[codex-sandbox/README.md](codex-sandbox/README.md)** for sandbox configuration, custom profiles, and verification tests.
+See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration, custom profiles, and verification tests.
 
 ## Codex Delegations
 
@@ -130,12 +165,12 @@ When Claude Code delegates tasks to Codex via MCP, significant token savings are
 
 | Delegation Type | Token Savings | Guide |
 |---|---|---|
-| Test Generation | [test-generation.md](codex-delegations/test-generation.md) |
-| Code Review | [code-review.md](codex-delegations/code-review.md) |
-| Refactoring | [refactoring.md](codex-delegations/refactoring.md) |
-| Documentation | [documentation.md](codex-delegations/documentation.md) |
+| Test Generation | [test-generation.md](codex-sandbox-mcp/delegations/test-generation.md) |
+| Code Review | [code-review.md](codex-sandbox-mcp/delegations/code-review.md) |
+| Refactoring | [refactoring.md](codex-sandbox-mcp/delegations/refactoring.md) |
+| Documentation | [documentation.md](codex-sandbox-mcp/delegations/documentation.md) |
 
-See **[codex-delegations/README.md](codex-delegations/README.md)** for MCP tool reference and delegation patterns.
+See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for MCP tool reference and delegation patterns.
 
 ---
 
@@ -186,24 +221,30 @@ claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/se
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/security-hooks/*.sh ~/.claude/hooks/
 ln -s ~/git/claude-orchestrator/gemini-web-mcp/hooks/*.sh ~/.claude/hooks/
-ln -s ~/git/claude-orchestrator/codex-delegations/hooks/*.sh ~/.claude/hooks/
+ln -s ~/git/claude-orchestrator/codex-sandbox-mcp/delegations/hooks/*.sh ~/.claude/hooks/
 
-# 6. Wire hooks in settings (see gemini-web-mcp/SETUP.md Step 6 for full config)
+# 6. Install global slash commands
+mkdir -p ~/.claude/commands
+cp slash-commands/*.md ~/.claude/commands/
+
+# 7. Wire hooks in settings (see gemini-web-mcp/SETUP.md Step 6 for full config)
 # Hooks must be registered in ~/.claude/settings.json to run
 
-# 7. Verify setup
+# 8. Verify setup
 claude mcp list                # gemini-web should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
+ls ~/.claude/commands/          # slash commands should be present
 
-# 8. Test web search
+# 9. Test web search
 claude "search the web for MCP protocol specification"
 ```
 
 ## Setup Details
 
 - **Gemini Web Search:** See **[gemini-web-mcp/SETUP.md](gemini-web-mcp/SETUP.md)** for the complete installation guide.
-- **Codex Sandbox:** See **[codex-sandbox/README.md](codex-sandbox/README.md)** for sandbox configuration.
-- **Codex Delegations:** See **[codex-delegations/README.md](codex-delegations/README.md)** for delegation patterns and hooks.
+- **Codex Sandbox:** See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration.
+- **Codex Delegations:** See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for delegation patterns and hooks.
+- **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
 
 ---
 
@@ -221,4 +262,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This project uses a project-root `CLAUDE.md` to declare the `web_search` tool, its usage rules, and the project structure. To apply these rules globally, copy the relevant sections to `~/.claude/CLAUDE.md`.
 
 ---
-*Last updated: 2026-02-13*
+*Last updated: 2026-02-16*

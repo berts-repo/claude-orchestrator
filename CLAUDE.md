@@ -35,12 +35,20 @@ Delegate code-heavy tasks to Codex running in a sandbox. Returns a threadId and 
 | Refactoring | `workspace-write` | `on-failure` |
 | Documentation generation | `workspace-write` | `on-failure` |
 | Codebase exploration / analysis | `read-only` | `never` |
+| Changelog generation | `read-only` | `never` |
+| Error / stack trace analysis | `read-only` | `never` |
+| Lint / format fixing | `workspace-write` | `on-failure` |
+| Dependency audit | `read-only` + Gemini | `never` |
 
 **Trigger phrases for delegation:**
 - "write tests", "add tests", "generate tests"
 - "review this code", "security review", "audit this"
 - "refactor", "clean up this code"
 - "document this", "add docstrings", "generate docs"
+- "changelog", "what changed", "release notes"
+- "investigate this error", "debug this", "stack trace", "why is this failing"
+- "fix lint", "run linter", "format the code", "fix style"
+- "check dependencies", "audit dependencies", "outdated packages", "vulnerable dependencies"
 
 **Parameters:**
 - `prompt` (string, required): Clear task with acceptance criteria and test command
@@ -64,40 +72,45 @@ Delegate code-heavy tasks to Codex running in a sandbox. Returns a threadId and 
 
 **Large diffs:** When `git diff` output exceeds 100 lines, delegate to Codex with `sandbox: read-only` to summarize changes before presenting to the user.
 
-### Parallel Delegation
+### Parallel Delegation Protocol
 
-Call multiple MCP tools in a single message when tasks are independent. This applies to `mcp__codex__codex`, `mcp__gemini_web__web_search`, and any combination.
+Before delegating any task, evaluate whether it benefits from parallel fan-out:
 
-**When to parallelize (use judgment):**
-- Broad review scope (whole directory or project, >3 files) — split by concern (security, bugs, quality)
-- Multiple independent modules to process — one call per module
-- Review + best-practices research — Codex reviews code while Gemini searches for current standards
-- Multi-module test gen or docs — one call per non-overlapping directory
+**Step 1 -- Assess scope:**
+- How many files/modules are involved? (>3 files or >1 module = candidate)
+- How broad is the request? ("review this project" = broad; "fix this function" = narrow)
+- Single file / single concern = single call is sufficient
 
-**When a single call is sufficient:**
-- Small scope (single file, single function, <3 files)
-- User asks for one specific concern (e.g., "check for SQL injection" = one security-focused call)
-- Quick exploration or simple question about the codebase
+**Step 2 -- Pick decomposition axis:**
 
-**Safe to parallelize:**
-- Multiple Codex `read-only` tasks (security + bugs/logic + quality)
-- Codex `workspace-write` tasks targeting different directories
-- Code review (read-only) + test gen (write) for different modules
-- Web search + Codex analysis (research best practices while reviewing code)
-- Multiple web searches for different topics
+| Axis | When to use | Example |
+|------|-------------|---------|
+| By concern | Broad analysis tasks | Security audit + bug review + quality check |
+| By module | Multi-directory tasks | Tests for src/auth/ + tests for src/api/ |
+| By action | Research + execute tasks | Gemini researches patterns + Codex analyzes code |
+| By output | Independent deliverables | Docs for module A + docs for module B |
 
-**Do NOT parallelize:**
-- Two `workspace-write` Codex tasks targeting overlapping files
-- Test gen + refactoring on the same module
-- Any tasks where one depends on the output of another
+**Step 3 -- Check safety rules:**
+- `read-only` calls: always safe to parallelize (no conflicts)
+- `workspace-write` calls: safe ONLY if targeting non-overlapping directories
+- Mixed read-only + write: safe if different paths
+- NEVER parallelize when task B depends on task A output
+- NEVER parallelize two writes to overlapping files
 
-**Pattern:** Fan out independent tasks, then fan in results:
-1. Claude assesses scope and determines if parallel calls are beneficial
-2. Claude calls all independent MCP tools in one message
-3. Claude receives all results together
-4. Claude deduplicates, sorts by severity, and presents combined findings
+**Step 4 -- Add Gemini when beneficial:**
+Include a `mcp__gemini_web__web_search` call alongside Codex when:
+- Task involves a framework/language with evolving best practices
+- User mentions "best practices", "modern", "up to date", "latest"
+- Code touches security-sensitive patterns (auth, crypto, payments)
+- User explicitly asks for research
 
-See `codex-delegations/templates/parallel-review.txt` for the standard review fan-out pattern.
+Skip Gemini for: simple scripts, internal tooling, tasks where external context adds no value
+
+**Step 5 -- Fan out in one message, fan in results:**
+- Make all independent calls in a single message
+- After results return: deduplicate, sort by severity/priority, synthesize
+
+See `codex-sandbox-mcp/delegations/templates/parallel-delegation.txt` for reusable patterns and `codex-sandbox-mcp/delegations/templates/parallel-review.txt` for the review-specific fan-out.
 
 ## Blocked Subagents — DO NOT USE
 
@@ -112,7 +125,7 @@ The following Task subagents are blocked. Always use Codex instead:
 
 **Why:** These subagents return full content to your context. Codex processes externally and returns only a summary, saving 90-97% tokens.
 
-See `codex-delegations/` for detailed templates and examples.
+See `codex-sandbox-mcp/delegations/` for detailed templates and examples.
 
 ---
 
@@ -131,21 +144,27 @@ Always update the project structure according to what project you are working on
   - `hooks/` — Web search enforcement hooks
     - `inject-web-search-hint.sh` — Injects hint when user requests web access
     - `require-web-if-recency.sh` — Validates web_search was used for current info
-- `codex-sandbox/` — Codex MCP server with OS-level sandboxing
+- `codex-sandbox-mcp/` — Codex MCP server with OS-level sandboxing
   - `platforms/` — Platform-specific sandbox profiles (Linux/macOS)
   - `AGENTS.md` — Runtime constraints for Codex
-- `codex-delegations/` — Delegation patterns and templates
-  - `test-generation.md` — Test generation best practices
-  - `code-review.md` — Code review delegation
-  - `refactoring.md` — Refactoring delegation
-  - `documentation.md` — Documentation generation
-  - `templates/` — Reusable prompt templates
-  - `hooks/` — Codex delegation hooks
-    - `inject-codex-hint.sh` — Soft hint for delegation patterns (UserPromptSubmit)
-    - `block-explore-for-codex.sh` — Hard block on Explore subagent (PreToolUse)
-    - `block-test-gen-for-codex.sh` — Hard block on test_gen subagent (PreToolUse)
-    - `block-doc-comments-for-codex.sh` — Hard block on doc_comments subagent (PreToolUse)
-    - `block-diff-digest-for-codex.sh` — Hard block on diff_digest subagent (PreToolUse)
-    - `log-codex-delegation.sh` — Audit logging (PostToolUse)
+  - `delegations/` — Delegation patterns and templates
+    - `test-generation.md` — Test generation best practices
+    - `code-review.md` — Code review delegation
+    - `refactoring.md` — Refactoring delegation
+    - `documentation.md` — Documentation generation
+    - `templates/` — Reusable prompt templates
+    - `hooks/` — Codex delegation hooks
+      - `inject-codex-hint.sh` — Soft hint for delegation patterns (UserPromptSubmit)
+      - `block-explore-for-codex.sh` — Hard block on Explore subagent (PreToolUse)
+      - `block-test-gen-for-codex.sh` — Hard block on test_gen subagent (PreToolUse)
+      - `block-doc-comments-for-codex.sh` — Hard block on doc_comments subagent (PreToolUse)
+      - `block-diff-digest-for-codex.sh` — Hard block on diff_digest subagent (PreToolUse)
+      - `log-codex-delegation.sh` — Audit logging (PostToolUse), writes summaries to `delegations.jsonl` and full details to `details/{threadId}.jsonl`
+- `slash-commands/` — Global slash commands (copied to `~/.claude/commands/`)
+  - `log-cleanup.md` — `/log-cleanup` removes orphaned/expired audit log detail files
 - `~/.claude/hooks/` — Symlinks to project hooks (runtime location)
+- `~/.claude/commands/` — Global slash commands (runtime location)
+- `~/.claude/logs/` — Audit logs (created at runtime)
+  - `delegations.jsonl` — Summary index (last 100 entries, FIFO)
+  - `details/` — Full prompt/response per thread (30-day retention)
 - `~/.claude.json` — MCP server registration

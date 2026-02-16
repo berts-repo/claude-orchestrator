@@ -150,7 +150,7 @@ cd /path/to/your/project
 
 # Use the strict profile (blocks reads of ~/.ssh, ~/.aws, etc.)
 sandbox-exec \
-  -f /path/to/codex-sandbox/sandbox-profiles/codex-strict.sb \
+  -f /path/to/codex-sandbox-mcp/sandbox-profiles/codex-strict.sb \
   -D CWD="$(pwd)" \
   -D TMPDIR="$TMPDIR" \
   codex -s danger-full-access \
@@ -175,7 +175,7 @@ codex -s danger-full-access -a untrusted \
 
 # Option B: Use the network Seatbelt profile (filesystem still isolated)
 sandbox-exec \
-  -f /path/to/codex-sandbox/sandbox-profiles/codex-network.sb \
+  -f /path/to/codex-sandbox-mcp/sandbox-profiles/codex-network.sb \
   -D CWD="$(pwd)" \
   -D TMPDIR="$TMPDIR" \
   codex -s danger-full-access \

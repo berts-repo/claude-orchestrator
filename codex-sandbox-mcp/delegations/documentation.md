@@ -209,4 +209,4 @@ Claude can then create the documentation file from Codex's output.
 
 ---
 
-Related: [sandbox config](../codex-sandbox/config.toml) | [templates](templates/documentation.txt)
+Related: [sandbox config](../config.toml) | [templates](templates/documentation.txt)

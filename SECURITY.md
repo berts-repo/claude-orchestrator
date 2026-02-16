@@ -64,7 +64,7 @@ OS-level sandboxing for Codex CLI execution.
 - `codex-strict.sb` — No network, restricted filesystem
 - `codex-network.sb` — Network allowed, restricted filesystem
 
-**Location:** `codex-sandbox/platforms/`
+**Location:** `codex-sandbox-mcp/platforms/`
 
 ---
 

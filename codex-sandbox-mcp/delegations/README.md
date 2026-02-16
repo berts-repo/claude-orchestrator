@@ -275,6 +275,10 @@ For detailed templates and best practices for common delegation patterns:
 | **Documentation** | [documentation.md](documentation.md) | ~95% |
 | **Diff Summarization** | Codex `read-only` | ~95% |
 | **Codebase Exploration** | Codex `read-only` | ~90% |
+| **Changelog Generation** | Codex `read-only` | ~95% |
+| **Error / Stack Trace Analysis** | Codex `read-only` | ~90% |
+| **Lint / Format Fixing** | Codex `workspace-write` | ~85% |
+| **Dependency Audit** | Codex `read-only` + Gemini | ~90% |
 
 ---
 
@@ -297,6 +301,6 @@ See [hooks/README.md](hooks/README.md) for hook configuration.
 
 ## Related
 
-- [Sandbox Configuration](../codex-sandbox/README.md) — OS-level isolation modes
-- [AGENTS.md Template](../codex-sandbox/AGENTS.md) — Runtime constraints for Codex
-- [config.toml Reference](../codex-sandbox/config.toml) — Codex configuration options
+- [Sandbox Configuration](../README.md) — OS-level isolation modes
+- [AGENTS.md Template](../AGENTS.md) — Runtime constraints for Codex
+- [config.toml Reference](../config.toml) — Codex configuration options
