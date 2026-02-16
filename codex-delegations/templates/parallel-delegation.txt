@@ -1,0 +1,155 @@
+# Parallel Delegation Templates
+#
+# These templates show how to fan out multiple MCP calls in a single message.
+# Copy and adapt the relevant pattern for your use case.
+
+# ============================================================================
+# Pattern 1: Multi-Aspect Review (3x read-only Codex)
+# ============================================================================
+# Use when: User requests a thorough/comprehensive review of a module.
+# All three calls go in ONE message.
+
+## Call 1 — Security
+Tool: mcp__codex__codex
+  prompt: |
+    Security review of {TARGET_PATH}. Check for:
+    1. Injection vulnerabilities (SQL, command, path traversal)
+    2. Authentication/authorization bypass
+    3. Hardcoded secrets or credentials
+    4. Insecure data handling
+    Report findings as a numbered list with severity (critical/high/medium/low).
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+## Call 2 — Performance
+Tool: mcp__codex__codex
+  prompt: |
+    Performance review of {TARGET_PATH}. Check for:
+    1. N+1 queries or redundant database calls
+    2. Missing caching opportunities
+    3. Unnecessary memory allocations or copies
+    4. Blocking operations that could be async
+    Report findings as a numbered list with impact (high/medium/low).
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+## Call 3 — Code Quality
+Tool: mcp__codex__codex
+  prompt: |
+    Code quality review of {TARGET_PATH}. Check for:
+    1. Dead code or unreachable branches
+    2. Unclear naming or misleading abstractions
+    3. Missing error handling or swallowed exceptions
+    4. Duplicated logic that should be extracted
+    Report findings as a numbered list with priority (high/medium/low).
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+
+# ============================================================================
+# Pattern 2: Research + Review (web search + Codex)
+# ============================================================================
+# Use when: User asks to review code against current best practices,
+# or to research something online while also analyzing the codebase.
+# Both calls go in ONE message.
+
+## Call 1 — Web Research
+Tool: mcp__gemini_web__web_search
+  query: "{TOPIC} best practices 2026"
+  max_results: 5
+
+## Call 2 — Codex Analysis
+Tool: mcp__codex__codex
+  prompt: |
+    Review {TARGET_PATH} for {TOPIC} issues.
+    Report findings as a structured list.
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+## Fan-in: Claude compares Codex findings against web research results.
+
+
+# ============================================================================
+# Pattern 3: Multi-Module Test Generation (2x workspace-write Codex)
+# ============================================================================
+# Use when: User asks to generate tests for multiple independent modules.
+# ONLY safe when target directories do not overlap.
+# Both calls go in ONE message.
+
+## Call 1 — Module A Tests
+Tool: mcp__codex__codex
+  prompt: |
+    Generate unit tests for {MODULE_A_PATH}.
+    Use {TEST_FRAMEWORK}. Cover edge cases and error paths.
+    Run '{TEST_COMMAND}' to verify all tests pass.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
+
+## Call 2 — Module B Tests
+Tool: mcp__codex__codex
+  prompt: |
+    Generate unit tests for {MODULE_B_PATH}.
+    Use {TEST_FRAMEWORK}. Cover edge cases and error paths.
+    Run '{TEST_COMMAND}' to verify all tests pass.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
+
+
+# ============================================================================
+# Pattern 4: Full Pipeline (web search + review + test gen, non-overlapping)
+# ============================================================================
+# Use when: User requests a comprehensive audit with fixes.
+# The review and test gen MUST target different paths.
+# All three calls go in ONE message.
+
+## Call 1 — Web Research
+Tool: mcp__gemini_web__web_search
+  query: "latest {DOMAIN} vulnerabilities and mitigations 2026"
+  max_results: 5
+
+## Call 2 — Codex Review (read-only, path A)
+Tool: mcp__codex__codex
+  prompt: |
+    Security audit of {PATH_A}. Report all vulnerabilities found.
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{PROJECT_DIR}"
+
+## Call 3 — Codex Test Gen (workspace-write, path B — different from path A)
+Tool: mcp__codex__codex
+  prompt: |
+    Generate security-focused tests for {PATH_B}.
+    Test for injection, auth bypass, and input validation.
+    Run '{TEST_COMMAND}' to verify.
+  sandbox: "workspace-write"
+  approval-policy: "on-failure"
+  cwd: "{PROJECT_DIR}"
+
+## Fan-in: Claude cross-references web research with audit findings,
+## verifies test coverage addresses known vulnerability patterns.
+
+
+# ============================================================================
+# Anti-Patterns — Do NOT Parallelize These
+# ============================================================================
+#
+# BAD: Two workspace-write tasks on overlapping files
+#   mcp__codex__codex(sandbox="workspace-write", prompt="Refactor src/auth/login.ts...")
+#   mcp__codex__codex(sandbox="workspace-write", prompt="Add tests for src/auth/login.ts...")
+#   --> Both may write to the same file. Race condition.
+#
+# BAD: Task B depends on Task A output
+#   mcp__codex__codex(prompt="Analyze the codebase structure...")
+#   mcp__codex__codex(prompt="Based on the analysis, refactor...")
+#   --> Task B needs Task A results. Must be sequential.
+#
+# BAD: Refactor + test gen on same module
+#   mcp__codex__codex(prompt="Refactor src/utils/...")
+#   mcp__codex__codex(prompt="Generate tests for src/utils/...")
+#   --> Tests may target pre-refactor code. Must be sequential.

@@ -1,0 +1,83 @@
+# Parallel Code Review Template
+#
+# When to use: User asks to review code at a directory or project.
+# Claude should determine whether parallel calls are beneficial based on:
+#   - Codebase size (>3 files or >200 lines = parallelize)
+#   - Review scope (broad "review this" = parallelize; narrow "check this function" = single call)
+#   - Specificity (user asks for security-only = single focused call)
+#
+# When NOT to parallelize:
+#   - Small scope (single file, single function)
+#   - User asks for one specific concern only
+#   - Target directory has <3 files
+#
+# Fan-out: Make all calls in ONE message. Fan-in: Claude synthesizes results.
+
+# ============================================================================
+# Call 1 — Security & Input Validation (Codex, read-only)
+# ============================================================================
+Tool: mcp__codex__codex
+  prompt: |
+    Security review of all code in this directory. Check for:
+    1. Command injection, SQL injection, path traversal
+    2. XSS and unsafe HTML/template rendering
+    3. Hardcoded secrets, API keys, credentials
+    4. Missing input validation at boundaries
+    5. Insecure file operations (unsafe temp files, symlink attacks)
+    6. Authentication/authorization issues
+
+    For each finding report:
+    - Severity: CRITICAL / HIGH / MEDIUM / LOW
+    - Location: file:line
+    - Issue and recommendation
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{TARGET_DIR}"
+
+# ============================================================================
+# Call 2 — Bugs, Logic & Error Handling (Codex, read-only)
+# ============================================================================
+Tool: mcp__codex__codex
+  prompt: |
+    Review all code in this directory for correctness. Check for:
+    1. Logic errors, off-by-one, wrong comparisons
+    2. Race conditions or concurrency issues
+    3. Missing error handling, swallowed exceptions
+    4. Unhandled edge cases (empty input, null, overflow)
+    5. Resource leaks (unclosed files, connections)
+    6. Dead code or unreachable branches
+
+    For each finding report:
+    - Severity: CRITICAL / HIGH / MEDIUM / LOW
+    - Location: file:line
+    - Issue and recommendation
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "{TARGET_DIR}"
+
+# ============================================================================
+# Call 3 (optional) — Best Practices Research (Gemini web search)
+# ============================================================================
+# Include this call when:
+#   - The codebase uses a specific framework/language with evolving best practices
+#   - User mentions "best practices", "modern", "up to date"
+#   - The code involves security-sensitive patterns (auth, crypto, etc.)
+#
+# Skip this call when:
+#   - It's a simple shell script collection
+#   - The review is purely about bugs/correctness
+#   - User didn't ask for best-practices comparison
+#
+Tool: mcp__gemini_web__web_search
+  query: "{DETECTED_LANGUAGE} {DETECTED_FRAMEWORK} best practices 2026"
+  max_results: 5
+
+# ============================================================================
+# Fan-in: Claude synthesizes
+# ============================================================================
+# After receiving all results, Claude should:
+# 1. Deduplicate findings that appear in multiple reviews
+# 2. Sort by severity (critical first)
+# 3. Group by file for readability
+# 4. Add a summary with overall assessment
+# 5. If Gemini results were included, note where code diverges from best practices

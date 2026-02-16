@@ -2,14 +2,23 @@
 # PreToolUse hook: Block diff_digest subagent
 set -euo pipefail
 
-tool_name="$(jq -r '.tool_name // ""')"
+payload="$(cat)"
+tool_name="$(echo "$payload" | jq -r '.tool_name // ""')"
 [[ "$tool_name" != "Task" ]] && exit 0
 
-subagent="$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.subagent_type // ""' | tr '[:upper:]' '[:lower:]')"
+subagent="$(echo "$payload" | jq -r '.tool_input.subagent_type // ""' | tr '[:upper:]' '[:lower:]')"
 
 if [[ "$subagent" == "diff_digest" || "$subagent" == "diff-digest" ]]; then
-  echo '{"decision":"block","reason":"Use mcp__codex__codex with sandbox:read-only instead."}'
+  cat <<'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "diff_digest subagent is blocked. Use mcp__codex__codex with sandbox: read-only instead."
+  }
+}
+EOF
   exit 0
 fi
 
-echo '{"decision":"allow"}'
+exit 0

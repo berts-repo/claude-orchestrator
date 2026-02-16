@@ -64,6 +64,41 @@ Delegate code-heavy tasks to Codex running in a sandbox. Returns a threadId and 
 
 **Large diffs:** When `git diff` output exceeds 100 lines, delegate to Codex with `sandbox: read-only` to summarize changes before presenting to the user.
 
+### Parallel Delegation
+
+Call multiple MCP tools in a single message when tasks are independent. This applies to `mcp__codex__codex`, `mcp__gemini_web__web_search`, and any combination.
+
+**When to parallelize (use judgment):**
+- Broad review scope (whole directory or project, >3 files) — split by concern (security, bugs, quality)
+- Multiple independent modules to process — one call per module
+- Review + best-practices research — Codex reviews code while Gemini searches for current standards
+- Multi-module test gen or docs — one call per non-overlapping directory
+
+**When a single call is sufficient:**
+- Small scope (single file, single function, <3 files)
+- User asks for one specific concern (e.g., "check for SQL injection" = one security-focused call)
+- Quick exploration or simple question about the codebase
+
+**Safe to parallelize:**
+- Multiple Codex `read-only` tasks (security + bugs/logic + quality)
+- Codex `workspace-write` tasks targeting different directories
+- Code review (read-only) + test gen (write) for different modules
+- Web search + Codex analysis (research best practices while reviewing code)
+- Multiple web searches for different topics
+
+**Do NOT parallelize:**
+- Two `workspace-write` Codex tasks targeting overlapping files
+- Test gen + refactoring on the same module
+- Any tasks where one depends on the output of another
+
+**Pattern:** Fan out independent tasks, then fan in results:
+1. Claude assesses scope and determines if parallel calls are beneficial
+2. Claude calls all independent MCP tools in one message
+3. Claude receives all results together
+4. Claude deduplicates, sorts by severity, and presents combined findings
+
+See `codex-delegations/templates/parallel-review.txt` for the standard review fan-out pattern.
+
 ## Blocked Subagents — DO NOT USE
 
 The following Task subagents are blocked. Always use Codex instead:

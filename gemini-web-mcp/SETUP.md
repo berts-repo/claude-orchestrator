@@ -17,9 +17,10 @@ For the overall architecture and design goals, see the **[project README](../REA
 5. [Step 3 — Configure the API Key](#step-3--configure-the-api-key)
 6. [Step 4 — Test the Server Standalone](#step-4--test-the-server-standalone)
 7. [Step 5 — Register with Claude Code](#step-5--register-with-claude-code)
-8. [Step 6 — Install Hooks](#step-6--install-hooks)
-9. [Step 7 — Add Project Instructions](#step-7--add-project-instructions)
-10. [Step 8 — Verify End-to-End](#step-8--verify-end-to-end)
+8. [Step 5b — Pre-approve MCP Tools](#pre-approve-mcp-tools-for-parallel-delegation)
+9. [Step 6 — Install Hooks](#step-6--install-hooks)
+10. [Step 7 — Add Project Instructions](#step-7--add-project-instructions)
+11. [Step 8 — Verify End-to-End](#step-8--verify-end-to-end)
 11. [How the Code Works](#how-the-code-works)
 12. [Environment Variables](#environment-variables)
 13. [Troubleshooting](#troubleshooting)
@@ -202,14 +203,6 @@ Verify registration:
 claude mcp list
 # gemini-web: ... - ✓ Connected
 ```
-
-### Config file distinction
-
-| File | Purpose |
-|---|---|
-| `~/.claude.json` | MCP servers, user preferences |
-| `~/.claude/settings.json` | Hooks, security settings |
-| `.mcp.json` (project root) | Project-scoped MCP servers |
 
 ---
 
@@ -411,6 +404,37 @@ Make all hooks executable:
 ```bash
 chmod +x ~/.claude/hooks/*.sh
 ```
+
+### Pre-approve MCP tools for parallel delegation
+
+Claude Code prompts for approval on each MCP tool call. When multiple calls are in a single message (parallel delegation), rejecting the first cancels the entire batch. To enable seamless parallel execution, pre-approve the MCP tools in `~/.claude/settings.local.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__gemini_web__web_search",
+      "mcp__gemini_web__web_fetch",
+      "mcp__gemini_web__web_summarize",
+      "mcp__codex__codex",
+      "mcp__codex__codex-reply"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
+```
+
+This allows all Gemini web tools and Codex delegation tools to run without per-call approval prompts. Security is still enforced by hooks (network restriction, sensitive file guards) and Codex sandbox isolation.
+
+### Config file distinction
+
+| File | Purpose |
+|---|---|
+| `~/.claude.json` | MCP server registration, user preferences |
+| `~/.claude/settings.json` | Hooks, security settings, status line |
+| `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask lists) |
+| `.mcp.json` (project root) | Project-scoped MCP servers |
 
 ### Wire hooks into Claude Code settings
 

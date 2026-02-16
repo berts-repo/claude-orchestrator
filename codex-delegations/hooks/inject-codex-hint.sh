@@ -26,7 +26,20 @@ if echo "$prompt" | grep -Eiq '\b(review|audit|check|analyze|scan)\b.{0,20}\b(co
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'."
+    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Consider parallel delegation: split into multiple focused Codex calls (security + bugs/logic + quality) and optionally a Gemini web_search for latest best practices. See codex-delegations/templates/parallel-review.txt."
+  }
+}
+EOF
+  exit 0
+fi
+
+# Generic review (e.g., "review ~/Git/scripts", "review this project")
+if echo "$prompt" | grep -Eiq '\breview\b.{0,30}(~/|/|\./|\bthis\b|\bthe\b)'; then
+  cat <<'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Consider parallel delegation: split into multiple focused Codex calls (security + bugs/logic + quality) and optionally a Gemini web_search for latest best practices. See codex-delegations/templates/parallel-review.txt."
   }
 }
 EOF

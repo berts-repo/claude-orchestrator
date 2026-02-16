@@ -164,6 +164,105 @@ Step 4 - Claude presents the final result to the user.
 
 ---
 
+## Parallel Delegation (Fan-Out / Fan-In)
+
+Claude Code can call multiple MCP tools in a single message. Each `mcp__codex__codex` call gets its own `threadId` and sandbox. Independent tasks run concurrently for significant speed gains.
+
+**Prerequisite:** MCP tools must be pre-approved in `~/.claude/settings.local.json` for parallel calls to work seamlessly. When approval prompts are enabled, rejecting the first call in a batch cancels the entire batch. See the [Gemini SETUP guide](../gemini-web-mcp/SETUP.md#pre-approve-mcp-tools-for-parallel-delegation) for the permissions configuration.
+
+```
+Claude Code (orchestrator)
+    |
+    |--- mcp__codex__codex (read-only)  --> Security audit
+    |--- mcp__codex__codex (read-only)  --> Performance review
+    |--- mcp__gemini_web__web_search    --> Research best practices
+    |
+    v  (all return in parallel)
+Claude Code synthesizes combined findings
+```
+
+### When to parallelize
+
+| Scenario | Safe? | Why |
+|---|---|---|
+| 3x `read-only` reviews on the same repo | Yes | Read-only cannot conflict |
+| `workspace-write` tests for `src/auth/` + `workspace-write` tests for `src/billing/` | Yes | Different directories, no overlap |
+| `read-only` review + `workspace-write` test gen for different modules | Yes | No file overlap |
+| Web search + Codex analysis | Yes | Completely independent tools |
+| `workspace-write` refactor + `workspace-write` test gen on same module | **No** | Overlapping files cause race conditions |
+| Any task B that needs output of task A | **No** | Sequential dependency |
+
+### Example: Multi-aspect code review (3 parallel Codex calls)
+
+```
+Claude receives: "Do a thorough review of src/auth/"
+
+Claude emits three mcp__codex__codex calls in ONE message:
+
+Call 1:
+  prompt: "Security review of src/auth/. Check for injection, auth bypass,
+           hardcoded secrets. Report structured findings."
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "/Users/you/Git/my-project"
+
+Call 2:
+  prompt: "Performance review of src/auth/. Check for N+1 queries, missing
+           indexes, unnecessary allocations. Report structured findings."
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "/Users/you/Git/my-project"
+
+Call 3:
+  prompt: "Code quality review of src/auth/. Check for dead code, unclear
+           naming, missing error handling. Report structured findings."
+  sandbox: "read-only"
+  approval-policy: "never"
+  cwd: "/Users/you/Git/my-project"
+
+All three run concurrently. Claude receives all results together,
+synthesizes into a unified review, and presents to the user.
+```
+
+### Example: Research + review (web search + Codex in parallel)
+
+```
+Claude receives: "Research latest OWASP auth guidelines and review our auth code"
+
+Claude emits two MCP calls in ONE message:
+
+Call 1 (web search):
+  mcp__gemini_web__web_search(query="OWASP authentication best practices 2026")
+
+Call 2 (Codex):
+  mcp__codex__codex(
+    prompt: "Review src/auth/ for security vulnerabilities. Report findings.",
+    sandbox: "read-only",
+    cwd: "/Users/you/Git/my-project"
+  )
+
+Both run concurrently. Claude then compares Codex findings against
+the latest OWASP guidelines from the web search.
+```
+
+### Follow-ups after parallel calls
+
+After parallel initial calls return, use `mcp__codex__codex-reply` to continue specific threads:
+
+```
+Parallel fan-out returns threadId-A, threadId-B, threadId-C
+
+Claude reviews results and decides threadId-A needs a fix:
+  mcp__codex__codex-reply(
+    threadId: "threadId-A",
+    prompt: "Fix the SQL injection in src/auth/login.ts line 42."
+  )
+```
+
+Follow-ups are sequential by nature since they depend on initial results.
+
+---
+
 ## Task-Specific Guides
 
 For detailed templates and best practices for common delegation patterns:
