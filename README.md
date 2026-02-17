@@ -244,7 +244,6 @@ claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/se
 # 6. Install hooks
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
-ln -sn ~/git/claude-orchestrator/hooks/lib ~/.claude/hooks/lib
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
