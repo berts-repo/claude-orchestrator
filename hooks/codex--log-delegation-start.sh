@@ -6,7 +6,7 @@ set -euo pipefail
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
-source "$SCRIPT_DIR/lib/log-helpers.sh"
+source "$SCRIPT_DIR/shared--log-helpers.sh"
 
 payload="$(cat)"
 tool_name=$(echo "$payload" | jq -r '.tool_name // ""')

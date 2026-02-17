@@ -105,7 +105,7 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
 | `codex--log-delegation-start.sh` | PreToolUse (mcp__codex__codex, mcp__gemini_web__*) | Records start time for duration tracking |
 | `codex--log-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
-| `lib/log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
+| `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
 

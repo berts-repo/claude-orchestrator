@@ -7,7 +7,6 @@ All Claude Code hooks for the orchestration system. Hooks are shell scripts that
 ```bash
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
-ln -sn ~/git/claude-orchestrator/hooks/lib ~/.claude/hooks/lib
 ```
 
 Hooks must also be registered in `~/.claude/settings.json` to run. See the [Hooks Wiring](../README.md#hooks-wiring) section in the project README for the full settings configuration.
@@ -103,7 +102,7 @@ Logs all Codex and Gemini delegations to `~/.claude/logs/delegations.jsonl`. Rec
 
 ## Shared Helpers
 
-### `lib/log-helpers.sh`
+### `shared--log-helpers.sh`
 Sourced by logging hooks. Provides:
 - `log_json <level> <component> <event> [--arg key val ...]` — builds a JSON log line with unified envelope fields (`timestamp`, `level`, `component`, `session_id`, `event`)
 - `rotate_jsonl <file> <max_entries> [cleanup_fn]` — FIFO rotation by line count with optional per-line cleanup callback
