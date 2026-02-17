@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 LOGGER="$SCRIPT_DIR/security--log-security-event.sh"
 
 if [[ "$subagent" == "test_gen" || "$subagent" == "test-gen" ]]; then
-  "$LOGGER" "block-test-gen-for-codex" "Task" "$subagent" "subagent_type=$subagent" &>/dev/null || true
+  "$LOGGER" "block-test-gen-for-codex" "Task" "$subagent" "subagent_type=$subagent" "low" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {

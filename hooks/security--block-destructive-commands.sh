@@ -29,7 +29,7 @@ command="$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\" | tr -s '[:space:]' ' 
 if printf '%s\n' "$command" | grep -Eiq \
   'rm\s+(-[a-z]*r|-[a-z]*f|--recursive|--force)|drop\s+table|shutdown|mkfs|dd\s+if=|git\s+(reset\s+--hard|checkout\s+\.|push\s+(--force|-f)|clean\s+-f|branch\s+-D)'; then
   matched=$(printf '%s' "$command" | grep -Eio 'rm\s+(-rf|-f|--recursive|--force)|drop\s+table|shutdown|mkfs|dd\s+if=|git\s+(reset\s+--hard|checkout\s+\.|push\s+(--force|-f)|clean\s+-f|branch\s+-D)' | head -1)
-  "$SCRIPT_DIR/security--log-security-event.sh" "block-destructive-commands" "Bash" "$matched" "$raw_command" &>/dev/null || true
+  "$SCRIPT_DIR/security--log-security-event.sh" "block-destructive-commands" "Bash" "$matched" "$raw_command" "high" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {

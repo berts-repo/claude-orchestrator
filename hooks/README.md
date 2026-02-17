@@ -7,6 +7,7 @@ All Claude Code hooks for the orchestration system. Hooks are shell scripts that
 ```bash
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
+ln -sn ~/git/claude-orchestrator/hooks/lib ~/.claude/hooks/lib
 ```
 
 Hooks must also be registered in `~/.claude/settings.json` to run. See the [Hooks Wiring](../README.md#hooks-wiring) section in the project README for the full settings configuration.
@@ -42,6 +43,10 @@ Blocks destructive commands that could cause data loss:
 
 ### `security--log-security-event.sh`
 **Not a hook** -- helper script called by PreToolUse hooks when they deny an action. Writes to `~/.claude/logs/security-events.jsonl` with FIFO rotation (last 200 entries).
+
+Usage: `log-security-event.sh <hook_name> <tool_name> <pattern_matched> <command_preview> [severity]`
+
+Severity levels: `low` (blocked subagents), `medium` (network/sensitive reads), `high` (destructive commands), `critical`. Defaults to `medium` if omitted. Severity maps to log level: high/critical = error, medium = warn, low = info.
 
 ---
 
@@ -82,11 +87,28 @@ Blocks the `doc_comments` subagent. Codex writes documentation directly to files
 
 Blocks the `diff_digest` subagent. Codex processes large diffs externally, keeping them out of Claude's context.
 
+### `codex--log-delegation-start.sh`
+**Event:** PreToolUse (mcp__codex__codex, mcp__codex__codex-reply, mcp__gemini_web__*)
+**Enforcement:** Audit only
+
+Records delegation start time to `~/.claude/logs/.pending/` for duration tracking. Companion to `codex--log-delegation.sh`.
+
 ### `codex--log-delegation.sh`
 **Event:** PostToolUse (mcp__codex__codex, mcp__gemini_web__*)
 **Enforcement:** Audit only
 
-Logs all Codex and Gemini delegations to `~/.claude/logs/delegations.jsonl`. Records timestamp, thread ID, prompt summary, sandbox mode, and success status.
+Logs all Codex and Gemini delegations to `~/.claude/logs/delegations.jsonl`. Records timestamp, level, session_id, thread ID, prompt summary, sandbox mode, success status, and `duration_ms` (computed from the PreToolUse start marker).
+
+---
+
+## Shared Helpers
+
+### `lib/log-helpers.sh`
+Sourced by logging hooks. Provides:
+- `log_json <level> <component> <event> [--arg key val ...]` — builds a JSON log line with unified envelope fields (`timestamp`, `level`, `component`, `session_id`, `event`)
+- `rotate_jsonl <file> <max_entries> [cleanup_fn]` — FIFO rotation by line count with optional per-line cleanup callback
+- `ensure_dirs` — creates `~/.claude/logs/` and `~/.claude/logs/.pending/`
+- `SESSION_ID` — derived from `$CLAUDE_SESSION_ID` if set, otherwise a hash of `$PPID` + date for per-process-tree correlation
 
 ---
 

@@ -103,17 +103,23 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
 | `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__codex__codex, mcp__gemini_web__*) | Records start time for duration tracking |
 | `codex--log-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `lib/log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
 
-Codex and Gemini delegations are automatically logged by the `log-codex-delegation.sh` PostToolUse hook.
+All log entries share a unified schema with envelope fields: `timestamp`, `level` (info/warn/error), `component`, `session_id`, `event`, plus event-specific fields. The `session_id` groups all events from a single Claude Code process tree per day for correlation.
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
 - Short identifying summary (first line of prompt, truncated to 80 chars)
-- Metadata: timestamp, tool, sandbox mode, threadId, success
+- Metadata: timestamp, level, session_id, tool, sandbox mode, threadId, success, duration_ms
 - `detail` field points to the full prompt/response file
 - FIFO rotation keeps the last 100 entries
+
+**Duration tracking** — `~/.claude/logs/.pending/`
+- PreToolUse hook records start time; PostToolUse hook computes `duration_ms`
+- Pending markers are cleaned up automatically on completion
 
 **Detail files** — `~/.claude/logs/details/`
 - Codex: `{threadId}.jsonl` — one line per turn, preserving multi-turn conversation chains
@@ -122,13 +128,15 @@ Codex and Gemini delegations are automatically logged by the `log-codex-delegati
 
 **Security events** — `~/.claude/logs/security-events.jsonl`
 - Logged automatically when any PreToolUse hook denies an action
-- Fields: timestamp, hook name, tool, matched pattern, command preview, cwd
+- Fields: timestamp, level, session_id, hook, tool, action, severity (low/medium/high/critical), pattern_matched, command_preview, cwd
+- Severity mapping: destructive commands = high, network/sensitive reads = medium, blocked subagents = low
 - FIFO rotation keeps the last 200 entries
 - Run `/monitor` for a dashboard view of both delegation and security logs
 
 **Cleanup** — run `/log-cleanup` to:
 - Remove orphaned detail files not referenced by the summary index
 - Remove expired detail files (30+ days)
+- Remove stale pending markers (1+ hours old) from interrupted delegations
 - Clean up stale summary entries
 - Report disk usage
 
@@ -236,6 +244,7 @@ claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/se
 # 6. Install hooks
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
+ln -sn ~/git/claude-orchestrator/hooks/lib ~/.claude/hooks/lib
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
@@ -346,6 +355,16 @@ Edit `~/.claude/settings.json` to wire all hooks. Replace `YOUR_USER` with your 
         ]
       },
       {
+        "matcher": "mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--log-delegation-start.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Task",
         "hooks": [
           {
@@ -414,4 +433,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This repo ships [`CLAUDE.example.md`](CLAUDE.example.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
-*Last updated: 2026-02-16*
+*Last updated: 2026-02-17*

@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 # Helper to deny access
 deny() {
   local reason="$1"
-  "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_command:-}" &>/dev/null || true
+  "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_command:-}" "medium" &>/dev/null || true
   cat <<EOF
 {
   "hookSpecificOutput": {

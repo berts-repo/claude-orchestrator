@@ -4,66 +4,49 @@
 # Writes to ~/.claude/logs/security-events.jsonl with FIFO rotation.
 set -euo pipefail
 
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+source "$SCRIPT_DIR/lib/log-helpers.sh"
+
 MAX_ENTRIES=200
-LOG_DIR="${HOME}/.claude/logs"
 LOG_FILE="${LOG_DIR}/security-events.jsonl"
 
-# Usage: log-security-event.sh <hook_name> <tool_name> <pattern_matched> <command_preview>
+# Usage: log-security-event.sh <hook_name> <tool_name> <pattern_matched> <command_preview> [severity]
 # All args are optional — missing args default to "unknown"
 hook_name="${1:-unknown}"
 tool_name="${2:-unknown}"
 pattern_matched="${3:-unknown}"
 command_preview="${4:-}"
+severity="${5:-medium}"
 
 # Truncate command preview to 80 chars for safety (no secrets in logs)
 if [[ ${#command_preview} -gt 80 ]]; then
   command_preview="${command_preview:0:77}..."
 fi
 
-# Ensure log directory exists
-mkdir -p "$LOG_DIR"
+ensure_dirs
 
-# Build log entry — use jq if available, fall back to printf
-if command -v jq &>/dev/null; then
-  log_entry=$(jq -nc \
-    --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    --arg hook "$hook_name" \
-    --arg tool "$tool_name" \
-    --arg action "deny" \
-    --arg pattern "$pattern_matched" \
-    --arg preview "$command_preview" \
-    --arg cwd "$(pwd)" \
-    '{
-      timestamp: $ts,
-      hook: $hook,
-      tool: $tool,
-      action: $action,
-      pattern_matched: $pattern,
-      command_preview: $preview,
-      cwd: $cwd
-    }')
-else
-  # Fallback: manual JSON (escape double quotes in values)
-  escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-  log_entry=$(printf '{"timestamp":"%s","hook":"%s","tool":"%s","action":"deny","pattern_matched":"%s","command_preview":"%s","cwd":"%s"}' \
-    "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    "$(escape "$hook_name")" \
-    "$(escape "$tool_name")" \
-    "$(escape "$pattern_matched")" \
-    "$(escape "$command_preview")" \
-    "$(escape "$(pwd)")")
-fi
+# Map severity to log level
+case "$severity" in
+  critical|high) log_level="error" ;;
+  medium)        log_level="warn" ;;
+  low)           log_level="info" ;;
+  *)             log_level="warn" ;;
+esac
 
-# Append entry
+# Build and append log entry
+log_entry=$(log_json "$log_level" "security" "security_deny" \
+  --arg hook "$hook_name" \
+  --arg tool "$tool_name" \
+  --arg action "deny" \
+  --arg severity "$severity" \
+  --arg pattern_matched "$pattern_matched" \
+  --arg command_preview "$command_preview" \
+  --arg cwd "$(pwd)")
+
 echo "$log_entry" >> "$LOG_FILE"
 
 # FIFO rotation: keep last MAX_ENTRIES
-if [[ -f "$LOG_FILE" ]]; then
-  line_count=$(wc -l < "$LOG_FILE")
-  if [[ "$line_count" -gt "$MAX_ENTRIES" ]]; then
-    tail -n "$MAX_ENTRIES" "$LOG_FILE" > "${LOG_FILE}.tmp"
-    mv "${LOG_FILE}.tmp" "$LOG_FILE"
-  fi
-fi
+rotate_jsonl "$LOG_FILE" "$MAX_ENTRIES"
 
 exit 0
