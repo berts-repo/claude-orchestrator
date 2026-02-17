@@ -204,38 +204,44 @@ All provider-specific logic remains inside the MCP servers.
 git clone <repo-url> ~/git/claude-orchestrator
 cd ~/git/claude-orchestrator
 
-# 2. Install Gemini MCP server dependencies
+# 2. Install session instructions (pick one)
+# Option A: Global — applies to all projects
+cp CLAUDE.example.md ~/.claude/CLAUDE.md
+# Option B: Project-scoped — applies only when working in this repo
+cp CLAUDE.example.md CLAUDE.md
+
+# 3. Install Gemini MCP server dependencies
 cd gemini-web-mcp/server
 npm install
 cd ~/git/claude-orchestrator
 
-# 3. Configure API key
+# 4. Configure API key
 cp gemini-web-mcp/server/.env.example gemini-web-mcp/server/.env
 chmod 600 gemini-web-mcp/server/.env
 # Edit .env and add your GEMINI_API_KEY
 
-# 4. Register MCP servers
+# 5. Register MCP servers
 claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
 
-# 5. Install hooks
+# 6. Install hooks
 mkdir -p ~/.claude/hooks
 ln -s ~/git/claude-orchestrator/security-hooks/*.sh ~/.claude/hooks/
 ln -s ~/git/claude-orchestrator/gemini-web-mcp/hooks/*.sh ~/.claude/hooks/
 ln -s ~/git/claude-orchestrator/codex-sandbox-mcp/delegations/hooks/*.sh ~/.claude/hooks/
 
-# 6. Install global slash commands
+# 7. Install global slash commands
 mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
-# 7. Wire hooks in settings (see gemini-web-mcp/SETUP.md Step 6 for full config)
+# 8. Wire hooks in settings (see gemini-web-mcp/SETUP.md Step 6 for full config)
 # Hooks must be registered in ~/.claude/settings.json to run
 
-# 8. Verify setup
+# 9. Verify setup
 claude mcp list                # gemini-web should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/          # slash commands should be present
 
-# 9. Test web search
+# 10. Test web search
 claude "search the web for MCP protocol specification"
 ```
 
@@ -259,7 +265,7 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 | `./CLAUDE.md` (project root) | This project only (shared via git) |
 | `./.claude/CLAUDE.md` | This project only (gitignored, personal) |
 
-This project uses a project-root `CLAUDE.md` to declare the `web_search` tool, its usage rules, and the project structure. To apply these rules globally, copy the relevant sections to `~/.claude/CLAUDE.md`.
+This repo ships [`CLAUDE.example.md`](CLAUDE.example.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
 *Last updated: 2026-02-16*

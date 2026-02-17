@@ -180,4 +180,4 @@ Using `read-only` sandbox provides maximum security for review tasks.
 
 ---
 
-Related: [sandbox config](../config.toml) | [templates](templates/code-review.txt)
+Related: [sandbox config](../config.toml)

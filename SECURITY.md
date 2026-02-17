@@ -102,4 +102,44 @@ Project-level instructions enforced via `CLAUDE.md`:
 
 ---
 
-*Last updated: 2026-02-15*
+## Security Audit — Hook Findings
+
+Audit performed 2026-02-15. Status reviewed 2026-02-16.
+
+Full report: [`security-autit-hooks.md`](security-autit-hooks.md)
+
+### Status Summary
+
+| ID | Finding | Severity | Status |
+|----|---------|----------|--------|
+| HOOK-SEC-001 | Shell expansion bypass in network restriction (`$var`, `$(cmd)`, `${IFS}`) | High | Open |
+| HOOK-SEC-002 | Incomplete network tool coverage (`git`, `openssl`, `pip`, `dig` not blocked) | Medium | Open |
+| HOOK-SEC-003 | Flag ordering bypass in destructive command blocker | High | Open |
+| HOOK-SEC-004 | Path traversal/variable expansion bypass in sensitive reads | High | Partial — Read mode fixed via `realpath`; Bash mode still vulnerable |
+| HOOK-SEC-005 | `.pem` suffix-only bypass (piped commands evade `\.pem$`) | Medium | Open |
+| HOOK-SEC-006 | TOCTOU race in Read-mode sensitive guard | Medium | Open (low practical risk) |
+| HOOK-SEC-007 | Whitespace bypass in subagent blockers | Medium | Open |
+| HOOK-SEC-008 | Unbound `CLAUDE_TOOL_INPUT` crash in subagent blockers | High | Fixed — hooks now read from stdin, not env var |
+| HOOK-SEC-009 | Systemic jq parse error fail-open risk | High | Open |
+| HOOK-SEC-010 | Fake URL bypass in recency enforcement | Medium | Acknowledged — documented as known limitation |
+
+**Totals:** 1 fixed, 1 partial, 1 acknowledged, 7 open
+
+### Remediation Priority
+
+**Priority 1 — Quick fixes:**
+- SEC-005: Change `\.pem$` to `\.pem(\s|$|[|;&>])` in `guard-sensitive-reads.sh:74`
+- SEC-007: Add `| tr -d '[:space:]'` to subagent blocker string comparisons
+- SEC-009: Wrap all `jq` calls with parse-failure handling that emits deterministic deny
+
+**Priority 2 — Moderate effort:**
+- SEC-003: Rework destructive command regex to match flags independent of position
+- SEC-004 (Bash mode): Expand `$HOME`/`~` and resolve `..` in command strings before matching
+
+**Priority 3 — Architectural:**
+- SEC-001/002: Fundamental limitation of regex-based command matching; requires parser-based analysis or deny-by-default posture
+- SEC-006: Inherent to check-then-use pattern; mitigation requires kernel-level enforcement (O_NOFOLLOW)
+
+---
+
+*Last updated: 2026-02-16*

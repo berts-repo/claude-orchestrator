@@ -106,8 +106,6 @@ codex-sandbox-mcp/
   README.md                      <-- You are here
   AGENTS.md                      <-- Template instructions for Codex
   config.toml                    <-- Reference Codex configuration
-  examples/
-    standalone-cli.md            <-- Direct CLI usage examples
   platforms/
     macos/                       <-- macOS Seatbelt sandbox
       README.md                  <-- macOS-specific setup
