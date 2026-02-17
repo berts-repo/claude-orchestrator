@@ -110,26 +110,6 @@ Parameters:
 
 ---
 
-## CLAUDE.md Instructions for Safe Delegation
-
-Add these rules to your project's `CLAUDE.md` to ensure Claude always uses sandbox when delegating:
-
-```markdown
-## Codex Delegation Rules
-
-When delegating tasks to Codex via mcp__codex__codex:
-
-1. Always set sandbox: "workspace-write" unless the task requires otherwise
-2. Use sandbox: "read-only" for analysis, review, and documentation tasks
-3. Only use sandbox: "danger-full-access" when explicitly requested by the user,
-   and always pair it with approval-policy: "untrusted"
-4. Always set cwd to the specific project directory (never home dir or root)
-5. Include clear acceptance criteria in the prompt
-6. Include the specific test command to run
-```
-
----
-
 ## The Orchestrator-Worker Loop
 
 A typical Claude-Codex delegation cycle:
@@ -168,7 +148,7 @@ Step 4 - Claude presents the final result to the user.
 
 Claude Code can call multiple MCP tools in a single message. Each `mcp__codex__codex` call gets its own `threadId` and sandbox. Independent tasks run concurrently for significant speed gains.
 
-**Prerequisite:** MCP tools must be pre-approved in `~/.claude/settings.local.json` for parallel calls to work seamlessly. When approval prompts are enabled, rejecting the first call in a batch cancels the entire batch. See the [Gemini SETUP guide](../gemini-web-mcp/SETUP.md#pre-approve-mcp-tools-for-parallel-delegation) for the permissions configuration.
+**Prerequisite:** MCP tools must be pre-approved in `~/.claude/settings.local.json` for parallel calls to work seamlessly. When approval prompts are enabled, rejecting the first call in a batch cancels the entire batch. See the [Hooks Wiring](../../README.md#hooks-wiring) section in the project README for the permissions configuration.
 
 ```
 Claude Code (orchestrator)
@@ -295,7 +275,7 @@ These Claude Code subagents are blocked via PreToolUse hooks and must be delegat
 
 **Token preservation:** These subagents process files within Claude's context window. By delegating to Codex, the file contents stay external — only the summary returns to Claude, saving 90-97% of tokens.
 
-See [hooks/README.md](hooks/README.md) for hook configuration.
+See [hooks/README.md](../../hooks/README.md) for hook configuration.
 
 ---
 

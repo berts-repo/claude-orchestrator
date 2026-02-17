@@ -119,7 +119,8 @@ codex-sandbox-mcp/
         codex-strict.sh          <-- Strict profile
         codex-network.sh         <-- Network-enabled profile
 
-./delegations/            <-- MCP delegation patterns (separate directory)
+./delegations/            <-- MCP delegation patterns
+../hooks/                 <-- All hooks (consolidated from security-hooks/, delegations/hooks/, gemini hooks)
 ```
 
 ---

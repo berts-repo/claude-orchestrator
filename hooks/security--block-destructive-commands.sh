@@ -3,6 +3,9 @@
 # Blocks destructive commands that could cause data loss.
 set -euo pipefail
 
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+
 payload="$(cat)"
 raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')"
 
@@ -25,6 +28,8 @@ command="$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\" | tr -s '[:space:]' ' 
 # - git branch -D
 if printf '%s\n' "$command" | grep -Eiq \
   'rm\s+(-[a-z]*r|-[a-z]*f|--recursive|--force)|drop\s+table|shutdown|mkfs|dd\s+if=|git\s+(reset\s+--hard|checkout\s+\.|push\s+(--force|-f)|clean\s+-f|branch\s+-D)'; then
+  matched=$(printf '%s' "$command" | grep -Eio 'rm\s+(-rf|-f|--recursive|--force)|drop\s+table|shutdown|mkfs|dd\s+if=|git\s+(reset\s+--hard|checkout\s+\.|push\s+(--force|-f)|clean\s+-f|branch\s+-D)' | head -1)
+  "$SCRIPT_DIR/security--log-security-event.sh" "block-destructive-commands" "Bash" "$matched" "$raw_command" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {

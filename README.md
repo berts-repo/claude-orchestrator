@@ -92,15 +92,18 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 
 | Hook | Event | Purpose |
 |---|---|---|
-| `inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
-| `restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
-| `guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks reads of sensitive files when untrusted web content is loaded |
-| `require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
-| `block-explore-for-codex.sh` | PreToolUse (Task) | Blocks Explore subagent — use Codex read-only instead |
-| `block-test-gen-for-codex.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
-| `block-doc-comments-for-codex.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
-| `block-diff-digest-for-codex.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `log-codex-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
+| `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
+| `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks reads of sensitive files when untrusted web content is loaded |
+| `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
+| `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
+| `gemini--require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
+| `codex--inject-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks and injects Codex guidance |
+| `codex--block-explore.sh` | PreToolUse (Task) | Blocks Explore subagent — use Codex read-only instead |
+| `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
+| `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
+| `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
+| `codex--log-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 
 ### Audit Logging
 
@@ -117,6 +120,12 @@ Codex and Gemini delegations are automatically logged by the `log-codex-delegati
 - Gemini: `gemini-{epoch}-{pid}.jsonl` — one entry per call
 - Auto-deleted after 30 days (time-based retention)
 
+**Security events** — `~/.claude/logs/security-events.jsonl`
+- Logged automatically when any PreToolUse hook denies an action
+- Fields: timestamp, hook name, tool, matched pattern, command preview, cwd
+- FIFO rotation keeps the last 200 entries
+- Run `/monitor` for a dashboard view of both delegation and security logs
+
 **Cleanup** — run `/log-cleanup` to:
 - Remove orphaned detail files not referenced by the summary index
 - Remove expired detail files (30+ days)
@@ -130,6 +139,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 | Command | Purpose |
 |---|---|
 | `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
+| `/monitor` | Dashboard showing delegation stats and security event analysis |
 
 ```bash
 # Install (included in Quick Start)
@@ -225,16 +235,15 @@ claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/se
 
 # 6. Install hooks
 mkdir -p ~/.claude/hooks
-ln -s ~/git/claude-orchestrator/security-hooks/*.sh ~/.claude/hooks/
-ln -s ~/git/claude-orchestrator/gemini-web-mcp/hooks/*.sh ~/.claude/hooks/
-ln -s ~/git/claude-orchestrator/codex-sandbox-mcp/delegations/hooks/*.sh ~/.claude/hooks/
+ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
-# 8. Wire hooks in settings (see gemini-web-mcp/SETUP.md Step 6 for full config)
-# Hooks must be registered in ~/.claude/settings.json to run
+# 8. Wire hooks in settings
+# Hooks must be registered in ~/.claude/settings.json to run.
+# See the "Hooks Wiring" section below for the full configuration.
 
 # 9. Verify setup
 claude mcp list                # gemini-web should show "Connected"
@@ -247,10 +256,147 @@ claude "search the web for MCP protocol specification"
 
 ## Setup Details
 
-- **Gemini Web Search:** See **[gemini-web-mcp/SETUP.md](gemini-web-mcp/SETUP.md)** for the complete installation guide.
+- **Gemini Web Search:** See **[gemini-web-mcp/README.md](gemini-web-mcp/README.md)** for architecture, setup, and security model.
 - **Codex Sandbox:** See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration.
-- **Codex Delegations:** See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for delegation patterns and hooks.
+- **Codex Delegations:** See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for delegation patterns.
 - **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
+
+---
+
+## Hooks Wiring
+
+After symlinking hook scripts (Quick Start step 6), register them in `~/.claude/settings.json`. Hooks are not active until wired here.
+
+### Pre-approve MCP tools (optional, enables parallel delegation)
+
+When multiple MCP calls are in a single message, rejecting the first cancels the entire batch. Pre-approve tools in `~/.claude/settings.local.json` for seamless parallel execution:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__gemini_web__web_search",
+      "mcp__gemini_web__web_fetch",
+      "mcp__gemini_web__web_summarize",
+      "mcp__codex__codex",
+      "mcp__codex__codex-reply"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
+```
+
+### Config file distinction
+
+| File | Purpose |
+|---|---|
+| `~/.claude.json` | MCP server registration, user preferences |
+| `~/.claude/settings.json` | Hooks, security settings, status line |
+| `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask lists) |
+| `.mcp.json` (project root) | Project-scoped MCP servers |
+
+### Full hooks configuration
+
+Edit `~/.claude/settings.json` to wire all hooks. Replace `YOUR_USER` with your actual username:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/gemini--inject-web-search-hint.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--inject-hint.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/security--restrict-bash-network.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/security--block-destructive-commands.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/security--guard-sensitive-reads.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--block-explore.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--block-test-gen.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--block-doc-comments.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--block-diff-digest.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/codex--log-delegation.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/YOUR_USER/.claude/hooks/gemini--require-web-if-recency.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ---
 

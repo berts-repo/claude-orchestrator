@@ -8,7 +8,12 @@ tool_name="$(echo "$payload" | jq -r '.tool_name // ""')"
 
 subagent="$(echo "$payload" | jq -r '.tool_input.subagent_type // ""' | tr '[:upper:]' '[:lower:]')"
 
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+LOGGER="$SCRIPT_DIR/security--log-security-event.sh"
+
 if [[ "$subagent" == "explore" ]]; then
+  "$LOGGER" "block-explore-for-codex" "Task" "explore" "subagent_type=explore" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {

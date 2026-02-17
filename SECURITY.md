@@ -17,7 +17,7 @@ Blocks reads of sensitive files to prevent credential exfiltration:
 - `~/.claude.json`
 - `.env` files, private keys (`id_rsa`, `id_ed25519`, `.pem`)
 
-**Location:** `security-hooks/guard-sensitive-reads.sh`
+**Location:** `hooks/security--guard-sensitive-reads.sh`
 
 ### `restrict-bash-network.sh` — Block Direct Network Access
 
@@ -32,7 +32,7 @@ Blocked commands:
 - `/dev/tcp/` redirects
 - Language HTTP libraries (Python requests, Node fetch, etc.)
 
-**Location:** `security-hooks/restrict-bash-network.sh`
+**Location:** `hooks/security--restrict-bash-network.sh`
 
 ### `block-destructive-commands.sh` — Block Dangerous Operations
 
@@ -46,7 +46,7 @@ Blocks commands that could cause data loss or system damage:
 - `git push --force`, `git push -f`
 - `git clean -f`, `git branch -D`
 
-**Location:** `security-hooks/block-destructive-commands.sh`
+**Location:** `hooks/security--block-destructive-commands.sh`
 
 ---
 
@@ -76,6 +76,29 @@ Registered in `~/.claude.json`:
 |--------|---------|
 | `codex` | Code execution in sandbox |
 | `gemini-web` | Web search via Gemini |
+
+---
+
+## Security Event Logging
+
+When any PreToolUse hook denies an action, the event is automatically logged to `~/.claude/logs/security-events.jsonl`.
+
+**Logger:** `hooks/security--log-security-event.sh` -- a helper script called by hooks, not a hook itself.
+
+**Log entry fields:**
+| Field | Description |
+|-------|-------------|
+| `timestamp` | UTC ISO-8601 timestamp |
+| `hook` | Which hook blocked the action |
+| `tool` | The tool that was blocked (Bash, Read, Task) |
+| `action` | Always `deny` |
+| `pattern_matched` | What triggered the block (regex match or subagent name) |
+| `command_preview` | First 80 chars of the command (truncated for safety) |
+| `cwd` | Working directory at time of block |
+
+**Rotation:** FIFO, keeps last 200 entries.
+
+**Monitoring:** Run `/monitor` for an on-demand dashboard analyzing both delegation logs and security events.
 
 ---
 
@@ -128,7 +151,7 @@ Full report: [`security-autit-hooks.md`](security-autit-hooks.md)
 ### Remediation Priority
 
 **Priority 1 — Quick fixes:**
-- SEC-005: Change `\.pem$` to `\.pem(\s|$|[|;&>])` in `guard-sensitive-reads.sh:74`
+- SEC-005: Change `\.pem$` to `\.pem(\s|$|[|;&>])` in `hooks/security--guard-sensitive-reads.sh:78`
 - SEC-007: Add `| tr -d '[:space:]'` to subagent blocker string comparisons
 - SEC-009: Wrap all `jq` calls with parse-failure handling that emits deterministic deny
 

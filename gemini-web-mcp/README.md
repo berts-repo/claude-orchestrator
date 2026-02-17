@@ -65,9 +65,9 @@ Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protec
 | Output sanitization | Server | Strips `<script>`, HTML tags, fake system prompts |
 | Untrust markers | Server | Wraps all web content with clear markers |
 | Rate limiting | Server | 30 req/min prevents abuse |
-| `restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
-| `inject-web-search-hint.sh` | Hook | Detects web intent, injects "use web_search" context |
-| `require-web-if-recency.sh` | Hook | Blocks recency claims without source URLs |
+| `security--restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
+| `gemini--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use web_search" context |
+| `gemini--require-web-if-recency.sh` | Hook | Blocks recency claims without source URLs |
 
 ### Trust Boundaries
 
@@ -85,7 +85,6 @@ MCP tool interface               │  Any content after "BEGIN UNTRUSTED"
 ```
 gemini-web-mcp/
 ├── README.md                    # This file
-├── SETUP.md                     # Installation guide
 ├── server/                      # Canonical server code (runs from here)
 │   ├── server.mjs               # Main server — registers web_search tool
 │   ├── start.sh                 # Launcher — resolves API key, starts node
@@ -101,55 +100,230 @@ gemini-web-mcp/
 │       ├── index.mjs            # Provider factory
 │       ├── base-provider.mjs    # Abstract base class
 │       └── gemini-provider.mjs  # Gemini + Google Search implementation
-└── hooks/                       # Reference copies (runtime at ~/.claude/hooks/)
-    ├── inject-web-search-hint.sh
-    ├── restrict-bash-network.sh
-    └── require-web-if-recency.sh
+../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
+    ├── gemini--inject-web-search-hint.sh
+    ├── security--restrict-bash-network.sh
+    └── gemini--require-web-if-recency.sh
 ```
 
-## Quick Start
+---
 
-1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
+## Prerequisites
 
-2. Configure the API key:
-   ```bash
-   # Option A: Environment variable
-   export GEMINI_API_KEY="your-key"
+- **Linux or macOS**
+- **Claude Code** — installed and working
+- **Node.js** — v20+
+- **jq** — used by hook scripts to parse JSON (`sudo pacman -S jq` on Arch, `brew install jq` on macOS)
+- **A Google Gemini API key** — free tier works
 
-   # Option B: GNOME Keyring (Linux)
-   secret-tool store --label="MCP Gemini Web" service mcp-gemini-web account api-key
+---
 
-   # Option C: Local .env file
-   echo 'GEMINI_API_KEY=your-key' > gemini-web-mcp/server/.env
-   chmod 600 gemini-web-mcp/server/.env
-   ```
+## Setup
 
-3. Install dependencies:
-   ```bash
-   cd gemini-web-mcp/server
-   npm install
-   ```
+### Step 1 — Get a Gemini API Key
 
-4. Test standalone:
-   ```bash
-   node test-search.mjs "test query"
-   ```
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Sign in with a Google account
+3. Click **Create API Key**
+4. Copy the key — you will need it in Step 3
 
-5. Register with Claude Code:
-   ```bash
-   claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
-   ```
+The free tier allows 15 requests/minute for `gemini-2.5-flash`, which is more than enough.
 
-For detailed setup including hooks, see [SETUP.md](SETUP.md).
+### Step 2 — Install Dependencies
 
-## Environment Variables
+```bash
+cd ~/git/claude-orchestrator/gemini-web-mcp/server
+npm install
+```
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `GEMINI_API_KEY` | (required) | Google Gemini API key |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
-| `LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
-| `CACHE_ENABLED` | `true` | Set to `false` to disable caching |
+This installs three packages:
+- `@modelcontextprotocol/sdk` — MCP protocol over stdio
+- `@google/generative-ai` — Google Gemini API client
+- `zod` — runtime input validation
+
+Make the launcher executable:
+
+```bash
+chmod +x start.sh
+```
+
+### Step 3 — Configure the API Key
+
+Pick one of these methods (checked in this order by `start.sh`):
+
+**Option A: Environment variable (simplest)**
+
+```bash
+export GEMINI_API_KEY="your-key-here"
+```
+
+Add to your `~/.zshrc` (or `~/.bashrc`) to persist.
+
+**Option B: macOS Keychain**
+
+```bash
+security add-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w "your-key-here"
+```
+
+> **Linux alternative:** Use GNOME Keyring with `secret-tool store --label="MCP Gemini Web" service mcp-gemini-web account api-key`.
+
+**Option C: Local .env file (dev convenience)**
+
+```bash
+echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/gemini-web-mcp/server/.env
+chmod 600 ~/git/claude-orchestrator/gemini-web-mcp/server/.env
+```
+
+### Step 4 — Test Standalone
+
+This test calls the Gemini API directly, bypassing MCP transport, to confirm your key and network work:
+
+```bash
+cd ~/git/claude-orchestrator/gemini-web-mcp/server
+GEMINI_API_KEY="your-key" node test-search.mjs "latest Node.js release"
+```
+
+Expected output:
+
+```
+Testing Gemini web search grounding
+  Model: gemini-2.5-flash
+  Query: latest Node.js release
+
+--- Response ---
+(a paragraph summarizing search results)
+
+--- Grounding Sources ---
+  Title — https://...
+  Title — https://...
+
+PASS
+```
+
+If you see `PASS`, the Gemini integration works. If it fails, check your API key and network.
+
+### Step 5 — Register with Claude Code
+
+**Option A: CLI (recommended)**
+
+```bash
+claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
+```
+
+**Option B: Manual config**
+
+Add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "gemini-web": {
+      "command": "/home/YOUR_USER/.local/share/mcp/gemini-web/start.sh"
+    }
+  }
+}
+```
+
+Replace `YOUR_USER` with your actual username.
+
+Verify registration:
+
+```bash
+claude mcp list
+# gemini-web: ... - ✓ Connected
+```
+
+### Step 6 — Install Hooks and Wire Settings
+
+Hook installation and `settings.json` wiring are covered in the [project root README](../README.md):
+- **Quick Start step 6** — symlink hook scripts
+- **Hooks Wiring section** — full `settings.json` configuration
+
+### Step 7 — Verify End-to-End
+
+Open a new Claude Code session:
+
+```bash
+cd ~/git/claude-orchestrator
+claude
+```
+
+Type:
+
+```
+Search the web for the latest news about AI
+```
+
+What should happen:
+1. The `gemini--inject-web-search-hint.sh` hook detects "search the web" and injects context
+2. Claude calls the `web_search` MCP tool
+3. The MCP server queries Gemini with Google Search grounding
+4. Claude receives the results wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
+5. Claude synthesizes an answer and cites sources with URLs
+6. The `gemini--require-web-if-recency.sh` stop hook confirms sources are present
+
+---
+
+## How the Code Works
+
+### MCP Server (`server.mjs`)
+
+The server uses the Model Context Protocol over **stdio** (standard input/output). There are no ports or HTTP — Claude Code launches the server as a child process and communicates via JSON-RPC messages over stdin/stdout.
+
+The server registers one tool, `web_search`, which:
+
+1. **Rate limits** — 30 requests per 60 seconds (in-memory counter)
+2. **Sanitizes the query** — strips control characters, HTML tags, collapses whitespace, caps at 500 characters
+3. **Rejects injection attempts** — regex catches phrases like "ignore previous instructions", "sudo", "bash -c"
+4. **Checks the cache** — normalized key lookup, 5-minute TTL, 100 entries max
+5. **Calls the Gemini provider** — sends the query with Google Search grounding enabled
+6. **Sanitizes the response** — strips `<script>` tags, HTML, and injection headers like "IMPORTANT SYSTEM NOTE"
+7. **Wraps output** — surrounds result with `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
+8. **Caches the result** — errors are never cached
+
+### Launcher (`start.sh`)
+
+Resolves the API key from three sources (in order):
+1. `GEMINI_API_KEY` environment variable
+2. macOS Keychain / GNOME Keyring via `secret-tool`
+3. Local `.env` file
+
+Then starts the server with `exec node server.mjs`.
+
+### Gemini Provider (`providers/gemini-provider.mjs`)
+
+Calls the Gemini API (`gemini-2.5-flash` by default) with the `google_search` tool enabled. This makes Gemini perform a real Google Search, ground its response in the results, and return structured metadata with source URLs.
+
+The prompt asks for:
+- A 1-paragraph factual summary
+- Up to N sources with titles and URLs
+- Only claims supported by sources
+
+Source URLs come from `response.candidates[0].groundingMetadata.groundingChunks`, not from the text itself.
+
+### Provider Pattern (`providers/`)
+
+The server uses a provider factory pattern:
+- `base-provider.mjs` — abstract class defining the `search(query, maxResults)` interface
+- `gemini-provider.mjs` — working implementation
+- `index.mjs` — factory function, selects provider by name
+
+To add a new provider, create a class extending `BaseProvider`, implement `isAvailable()` and `search()`, and register it in `index.mjs`.
+
+### Cache (`lib/cache.mjs`)
+
+In-memory LRU cache using a `Map` (which preserves insertion order). Features:
+- **Normalized keys** — queries are lowercased and whitespace-collapsed before lookup
+- **TTL expiry** — entries older than 5 minutes are evicted
+- **LRU eviction** — when full (100 entries), the oldest entry is removed
+- **Error exclusion** — error responses are never cached
+- Disable with `CACHE_ENABLED=false`
+
+### Logger (`lib/logger.mjs`)
+
+Structured JSON logger that writes to **stderr only** (stdout is reserved for MCP protocol). Log level is set via the `LOG_LEVEL` environment variable (`debug`, `info`, `warn`, `error`). Default is `info`.
+
+---
 
 ## MCP Tool Interface
 
@@ -173,3 +347,68 @@ Sources:
 - Node.js Download Page — https://nodejs.org/en/download
 --- END UNTRUSTED WEB CONTENT ---
 ```
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GEMINI_API_KEY` | (required) | Google Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
+| `LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
+| `CACHE_ENABLED` | `true` | Set to `false` to disable caching |
+
+---
+
+## Troubleshooting
+
+### "No API key found" on server start
+
+The launcher checks three sources in order. Make sure at least one is set:
+```bash
+# Check environment
+echo $GEMINI_API_KEY
+
+# Check macOS Keychain
+security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
+
+# Check .env file
+cat ~/git/claude-orchestrator/gemini-web-mcp/server/.env
+```
+
+### Test script shows FAIL
+
+Run with debug output:
+```bash
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/gemini-web-mcp/server/test-search.mjs "test query"
+```
+
+Common causes:
+- Invalid API key
+- Network/firewall blocking Google API
+- Gemini quota exceeded (free tier: 15 req/min)
+
+### Claude doesn't use web_search
+
+1. Check MCP registration: `claude mcp list` — `gemini-web` should appear
+2. Check hooks are symlinked: `ls -la ~/.claude/hooks/`
+3. Make sure your prompt contains a trigger phrase like "search the web"
+4. Check `~/.claude/settings.json` has the hooks wired correctly (see [Hooks Wiring](../README.md#hooks-wiring))
+
+### Rate limit errors
+
+The server allows 30 requests per 60 seconds. If you're hitting this during normal use, the Gemini API free tier (15/min) will likely be the bottleneck first. Wait and retry.
+
+### Hook blocks a legitimate Bash command
+
+The network blocker hook has some false positives (e.g., a variable named `curl_options`). If a legitimate command is blocked, review `security--restrict-bash-network.sh` and adjust the regex.
+
+### Logs
+
+MCP server logs go to stderr as JSON. To see them:
+```bash
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/gemini-web-mcp/server/server.mjs 2>&1 | jq '.'
+```
+
+---
+
+*Part of the [Claude Code MCP Bridge](../README.md) project.*

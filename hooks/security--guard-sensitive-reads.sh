@@ -13,9 +13,13 @@ if [[ "$tool_name" != "Read" && "$tool_name" != "Bash" ]]; then
   exit 0
 fi
 
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+
 # Helper to deny access
 deny() {
   local reason="$1"
+  "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_command:-}" &>/dev/null || true
   cat <<EOF
 {
   "hookSpecificOutput": {

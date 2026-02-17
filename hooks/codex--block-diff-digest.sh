@@ -8,7 +8,12 @@ tool_name="$(echo "$payload" | jq -r '.tool_name // ""')"
 
 subagent="$(echo "$payload" | jq -r '.tool_input.subagent_type // ""' | tr '[:upper:]' '[:lower:]')"
 
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+LOGGER="$SCRIPT_DIR/security--log-security-event.sh"
+
 if [[ "$subagent" == "diff_digest" || "$subagent" == "diff-digest" ]]; then
+  "$LOGGER" "block-diff-digest-for-codex" "Task" "$subagent" "subagent_type=$subagent" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {
