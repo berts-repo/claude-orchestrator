@@ -6,7 +6,12 @@ set -euo pipefail
 
 payload="$(cat)"
 
-tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
+deny_on_parse_error() {
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Hook failed to parse tool input \xe2\x80\x94 denying to fail secure."}}\n'
+  exit 2
+}
+
+tool_name=$(echo "$payload" | jq -r '.tool_name // ""' 2>/dev/null) || deny_on_parse_error
 
 # Only check Read and Bash tools
 if [[ "$tool_name" != "Read" && "$tool_name" != "Bash" ]]; then
@@ -34,7 +39,7 @@ EOF
 
 # Extract the relevant input
 if [[ "$tool_name" == "Read" ]]; then
-  raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""')
+  raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || deny_on_parse_error
 
   # Canonicalize path to prevent symlink/traversal bypasses
   # Use realpath to resolve symlinks and ../ components
@@ -55,9 +60,17 @@ if [[ "$tool_name" == "Read" ]]; then
   fi
 else
   # For Bash, check the command for cat/head/tail of sensitive paths
-  raw_command=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')
+  raw_command=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null) || deny_on_parse_error
   # Normalize command to catch obfuscation
   target=$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\" | tr -s '[:space:]' ' ')
+  # Expand ~ to $HOME
+  target="${target//~/$HOME}"
+  # Normalize /../ and /./ sequences (iterate for nested traversals)
+  while [[ "$target" == *"/../"* || "$target" == *"/./"* ]]; do
+    target="$(printf '%s' "$target" | sed 's|/[^/]*/\.\./|/|g; s|/\./|/|g')"
+  done
+  # Strip any remaining leading ../ sequences
+  target="${target//\.\.\//}"
 fi
 
 # Expand ~ to $HOME for matching
@@ -75,7 +88,7 @@ sensitive_patterns=(
   "(${expanded_home}|~)/\.claude\.json"
   "\.env($|[^a-zA-Z])"
   "id_rsa|id_ed25519|id_ecdsa"
-  "\.pem$"
+  "\.pem(\s|$|[|;&>])"
 )
 
 for pattern in "${sensitive_patterns[@]}"; do

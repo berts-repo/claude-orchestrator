@@ -3,11 +3,17 @@
 # Blocks destructive commands that could cause data loss.
 set -euo pipefail
 
+deny_on_parse_error() {
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Hook failed to parse tool input \xe2\x80\x94 denying to fail secure."}}\n'
+  exit 2
+}
+
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 
 payload="$(cat)"
-raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')"
+raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null)" \
+  || deny_on_parse_error
 
 # Normalize command to reduce bypass surface:
 # - Strip quotes, backticks, and backslashes that could obfuscate commands

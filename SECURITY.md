@@ -127,42 +127,59 @@ Project-level instructions enforced via `CLAUDE.md`:
 
 ## Security Audit — Hook Findings
 
-Audit performed 2026-02-15. Status reviewed 2026-02-16.
-
-Full report: [`security-autit-hooks.md`](security-autit-hooks.md)
+Audit performed 2026-02-15. Priority 1 fixes applied 2026-02-18.
 
 ### Status Summary
 
 | ID | Finding | Severity | Status |
 |----|---------|----------|--------|
-| HOOK-SEC-001 | Shell expansion bypass in network restriction (`$var`, `$(cmd)`, `${IFS}`) | High | Open |
+| HOOK-SEC-001 | Shell expansion bypass in network restriction (`$var`, `$(cmd)`, `${IFS}`) | High | Fixed — strip `$(){}[]` in normalization; broaden word-boundary prefix |
 | HOOK-SEC-002 | Incomplete network tool coverage (`git`, `openssl`, `pip`, `dig` not blocked) | Medium | Open |
 | HOOK-SEC-003 | Flag ordering bypass in destructive command blocker | High | Open |
-| HOOK-SEC-004 | Path traversal/variable expansion bypass in sensitive reads | High | Partial — Read mode fixed via `realpath`; Bash mode still vulnerable |
-| HOOK-SEC-005 | `.pem` suffix-only bypass (piped commands evade `\.pem$`) | Medium | Open |
+| HOOK-SEC-004 | Path traversal/variable expansion bypass in sensitive reads | High | Fixed — Bash mode now expands `~` and normalizes `/../`/`/./` sequences |
+| HOOK-SEC-005 | `.pem` suffix-only bypass (piped commands evade `\.pem$`) | Medium | Fixed — pattern changed to `\.pem(\s|$|[|;&>])` |
 | HOOK-SEC-006 | TOCTOU race in Read-mode sensitive guard | Medium | Open (low practical risk) |
-| HOOK-SEC-007 | Whitespace bypass in subagent blockers | Medium | Open |
+| HOOK-SEC-007 | Whitespace bypass in subagent blockers | Medium | Fixed — added `| tr -d '[:space:]'` to all subagent extractions |
 | HOOK-SEC-008 | Unbound `CLAUDE_TOOL_INPUT` crash in subagent blockers | High | Fixed — hooks now read from stdin, not env var |
-| HOOK-SEC-009 | Systemic jq parse error fail-open risk | High | Open |
+| HOOK-SEC-009 | Systemic jq parse error fail-open risk | High | Fixed — `deny_on_parse_error` helper exits 2 on any jq failure |
 | HOOK-SEC-010 | Fake URL bypass in recency enforcement | Medium | Acknowledged — documented as known limitation |
 
-**Totals:** 1 fixed, 1 partial, 1 acknowledged, 7 open
+**Totals:** 6 fixed, 1 acknowledged, 3 open
 
 ### Remediation Priority
 
-**Priority 1 — Quick fixes:**
-- SEC-005: Change `\.pem$` to `\.pem(\s|$|[|;&>])` in `hooks/security--guard-sensitive-reads.sh:78`
-- SEC-007: Add `| tr -d '[:space:]'` to subagent blocker string comparisons
-- SEC-009: Wrap all `jq` calls with parse-failure handling that emits deterministic deny
+**Priority 1 — Fixed (2026-02-18):**
+- ~~SEC-001~~: Shell expansion chars (`$(){}[]`) stripped in normalization; word-boundary prefix broadened
+- ~~SEC-004~~: Bash mode now expands `~` and iteratively normalizes `/../`/`/./` sequences (elevated from P2 due to CVE-2025-54794)
+- ~~SEC-005~~: Pattern changed from `\.pem$` to `\.pem(\s|$|[|;&>])`
+- ~~SEC-007~~: `| tr -d '[:space:]'` added to all subagent extractions
+- ~~SEC-009~~: `deny_on_parse_error` helper exits 2 on any jq parse failure
 
-**Priority 2 — Moderate effort:**
+**Priority 2 — Remaining open:**
 - SEC-003: Rework destructive command regex to match flags independent of position
-- SEC-004 (Bash mode): Expand `$HOME`/`~` and resolve `..` in command strings before matching
 
 **Priority 3 — Architectural:**
-- SEC-001/002: Fundamental limitation of regex-based command matching; requires parser-based analysis or deny-by-default posture
+- SEC-002: Incomplete network tool coverage; requires parser-based analysis or deny-by-default posture
 - SEC-006: Inherent to check-then-use pattern; mitigation requires kernel-level enforcement (O_NOFOLLOW)
 
 ---
 
-*Last updated: 2026-02-16*
+## CVE Cross-Reference (2025)
+
+Two CVEs patched in 2025 targeted Claude Code hook mechanisms specifically. Both are now fixed.
+
+| CVE | Description | Maps To | Status |
+|-----|-------------|---------|--------|
+| CVE-2025-54794 | Path traversal in Claude Code security hooks | HOOK-SEC-004 (path traversal/variable expansion in sensitive reads) | Fixed — Bash mode now normalizes `~`, `/../`, `/./` before pattern matching |
+| CVE-2025-54795 | Command injection via hook inputs (`CLAUDE_TOOL_INPUT`) | HOOK-SEC-001 (shell expansion bypass) | Fixed — `$(){}[]` stripped in normalization; word-boundary pattern broadened |
+
+**Applied mitigations (2026-02-18):**
+- `$(){}[]` and backticks stripped before any grep evaluation (SEC-001 / CVE-2025-54795)
+- File paths extracted from hook inputs normalized for `..` sequences before comparison (SEC-004 / CVE-2025-54794)
+- Deny-by-default on jq parse failure via `deny_on_parse_error` (SEC-009)
+
+*Source: web search, 2026-02-18*
+
+---
+
+*Last updated: 2026-02-18 — Priority 1 fixes applied (SEC-001, SEC-004, SEC-005, SEC-007, SEC-009)*
