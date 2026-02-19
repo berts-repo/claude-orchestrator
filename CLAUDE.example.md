@@ -9,7 +9,7 @@
 
 ## Codex Delegation
 
-Delegate code-heavy tasks to Codex via `mcp__agent1__codex`. Always set `cwd` explicitly.
+Delegate code-heavy tasks to Codex via `mcp__codex__codex`. Always set `cwd` explicitly.
 
 | Task Type | Sandbox | Approval Policy |
 |-----------|---------|-----------------|
@@ -26,7 +26,7 @@ Delegate code-heavy tasks to Codex via `mcp__agent1__codex`. Always set `cwd` ex
 
 ## Parallel Delegation
 
-For broad tasks (>3 files, multiple concerns), fan out multiple Codex calls in one message using `mcp__agent1__codex`, `mcp__agent2__codex`, and `mcp__agent3__codex`:
+For broad tasks (>3 files, multiple concerns), fan out multiple `mcp__codex__codex` calls in one message:
 - `read-only` calls: always safe to parallelize
 - `workspace-write` calls: safe only if targeting non-overlapping directories
 - Never parallelize when one task depends on another's output
@@ -39,7 +39,7 @@ Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):
 
 | Blocked | Use Instead |
 |---------|-------------|
-| `Explore` | `mcp__agent1__codex` with `sandbox: "read-only"` |
-| `test_gen` | `mcp__agent1__codex` with `sandbox: "workspace-write"` |
-| `doc_comments` | `mcp__agent1__codex` with `sandbox: "workspace-write"` |
-| `diff_digest` | `mcp__agent1__codex` with `sandbox: "read-only"` |
+| `Explore` | `mcp__codex__codex` with `sandbox: "read-only"` |
+| `test_gen` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
+| `doc_comments` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
+| `diff_digest` | `mcp__codex__codex` with `sandbox: "read-only"` |

@@ -11,12 +11,9 @@ source "$SCRIPT_DIR/shared--log-helpers.sh"
 payload="$(cat)"
 tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
-# Only track Codex agents and Gemini calls
+# Only track Codex and Gemini calls
 case "$tool_name" in
   mcp__codex__codex|mcp__codex__codex-reply) ;;
-  mcp__agent1__codex|mcp__agent1__codex-reply) ;;
-  mcp__agent2__codex|mcp__agent2__codex-reply) ;;
-  mcp__agent3__codex|mcp__agent3__codex-reply) ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) ;;
   *) exit 0 ;;
 esac

@@ -104,8 +104,8 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
 | `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__agent1__codex, mcp__agent2__codex, mcp__agent3__codex, mcp__gemini_web__*) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__agent1__codex, mcp__agent2__codex, mcp__agent3__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__codex__codex, mcp__gemini_web__*) | Records start time for duration tracking |
+| `codex--log-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
@@ -282,12 +282,8 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
       "mcp__gemini_web__web_search",
       "mcp__gemini_web__web_fetch",
       "mcp__gemini_web__web_summarize",
-      "mcp__agent1__codex",
-      "mcp__agent1__codex-reply",
-      "mcp__agent2__codex",
-      "mcp__agent2__codex-reply",
-      "mcp__agent3__codex",
-      "mcp__agent3__codex-reply"
+      "mcp__codex__codex",
+      "mcp__codex__codex-reply"
     ],
     "deny": [],
     "ask": []

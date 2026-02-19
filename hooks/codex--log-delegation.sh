@@ -24,12 +24,9 @@ payload="$(cat)"
 
 tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
-# Only log Codex agents and Gemini calls
+# Only log Codex and Gemini calls
 case "$tool_name" in
   mcp__codex__codex|mcp__codex__codex-reply) tool_type="codex" ;;
-  mcp__agent1__codex|mcp__agent1__codex-reply) tool_type="codex" ;;
-  mcp__agent2__codex|mcp__agent2__codex-reply) tool_type="codex" ;;
-  mcp__agent3__codex|mcp__agent3__codex-reply) tool_type="codex" ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) tool_type="gemini" ;;
   *) exit 0 ;;
 esac

@@ -22,7 +22,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Rename the 'UserService' class to 'AccountService' across the entire codebase.\n\nSteps:\n1. Rename the class definition\n2. Update all imports\n3. Update all references\n4. Update test files\n5. Run tests to verify\n\nReport: files changed, references updated, test results.",
     "sandbox": "workspace-write",
@@ -40,7 +40,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Rename '{{OLD_NAME}}' to '{{NEW_NAME}}' everywhere in the codebase.\n\nInclude:\n- Class/function/variable definitions\n- All imports and exports\n- All usage sites\n- Test files\n- Type definitions\n\nRun: {{TEST_COMMAND}}\n\nReport: files changed, occurrences updated, test results.",
     "sandbox": "workspace-write",
@@ -54,7 +54,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Extract the validation logic from src/api/users.ts (lines 45-89) into a new file src/utils/userValidation.ts.\n\nSteps:\n1. Create the new file with the extracted functions\n2. Add proper exports\n3. Update src/api/users.ts to import from the new file\n4. Update any other files that might benefit from the shared validation\n5. Run tests\n\nConstraints:\n- Preserve all existing behavior\n- Maintain type safety\n- Don't change public API",
     "sandbox": "workspace-write",
@@ -68,7 +68,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Change the signature of 'processOrder' from:\n  processOrder(orderId: string, userId: string)\nto:\n  processOrder(options: { orderId: string; userId: string; priority?: number })\n\nSteps:\n1. Update the function definition\n2. Update all call sites to use the new object syntax\n3. Update tests\n4. Run tests\n\nFor call sites, convert:\n  processOrder('abc', 'user1') → processOrder({ orderId: 'abc', userId: 'user1' })",
     "sandbox": "workspace-write",
@@ -82,7 +82,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Migrate callback-style functions in src/services/ to async/await.\n\nConvert patterns like:\n  function getData(id, callback) {\n    db.query(..., (err, result) => callback(err, result));\n  }\n\nTo:\n  async function getData(id) {\n    return await db.query(...);\n  }\n\nSteps:\n1. Convert each function\n2. Update callers to use await\n3. Add error handling where callbacks had error params\n4. Run tests after each file\n\nSkip: Functions that are part of public API (would break consumers)",
     "sandbox": "workspace-write",
@@ -96,7 +96,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Find and consolidate duplicate code in src/api/.\n\nSteps:\n1. Identify functions/blocks that are duplicated or near-duplicated\n2. Create shared utilities in src/utils/ for common patterns\n3. Replace duplicates with calls to shared utilities\n4. Run tests\n\nConstraints:\n- Only consolidate true duplicates (same logic, not just similar structure)\n- Preserve all existing behavior\n- Document new utilities with JSDoc\n\nReport: duplicates found, utilities created, files updated",
     "sandbox": "workspace-write",
@@ -110,7 +110,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Restructure src/components/ from flat to feature-based:\n\nCurrent:\n  src/components/\n    Button.tsx\n    Input.tsx\n    UserCard.tsx\n    UserList.tsx\n    ProductCard.tsx\n\nTarget:\n  src/components/\n    common/\n      Button.tsx\n      Input.tsx\n    users/\n      UserCard.tsx\n      UserList.tsx\n    products/\n      ProductCard.tsx\n\nSteps:\n1. Create new directories\n2. Move files\n3. Update all imports throughout the codebase\n4. Update barrel exports (index.ts)\n5. Run tests",
     "sandbox": "workspace-write",

@@ -60,7 +60,7 @@ cat <<EOF_JSON
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "Large new code file creation is blocked for Write. Use mcp__agent1__codex with sandbox: workspace-write and approval-policy: on-failure. Always set cwd to absolute path: $ABS_CWD. Follow CLAUDE.md Codex Delegation rules."
+    "permissionDecisionReason": "Large new code file creation is blocked for Write. Use mcp__codex__codex with sandbox: workspace-write and approval-policy: on-failure. Always set cwd to absolute path: $ABS_CWD. Follow CLAUDE.md Codex Delegation rules."
   }
 }
 EOF_JSON

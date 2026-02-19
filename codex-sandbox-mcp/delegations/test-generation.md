@@ -34,7 +34,7 @@ Test generation is a high-token, low-reasoning task:
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Generate unit tests for the following files:\n- src/utils/validation.ts\n- src/utils/formatting.ts\n\nRequirements:\n1. Use the existing test framework (detect from package.json or existing tests)\n2. Match the test file naming convention in the codebase\n3. Cover: happy path, edge cases, error cases\n4. Each test should have a descriptive name\n5. Run the test command and report pass/fail\n\nReturn:\n- Files created\n- Test count\n- Coverage summary (if available)\n- Any functions that couldn't be tested (and why)",
     "sandbox": "workspace-write",
@@ -48,7 +48,7 @@ Test generation is a high-token, low-reasoning task:
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Add tests for the new feature in src/features/auth/login.ts\n\nContext: This feature implements user login with email/password.\nThe function should:\n- Return a token on success\n- Throw AuthError on invalid credentials\n- Throw ValidationError on malformed input\n\nGenerate tests covering:\n1. Successful login returns token\n2. Invalid password throws AuthError\n3. Unknown user throws AuthError\n4. Empty email throws ValidationError\n5. Malformed email throws ValidationError\n\nUse existing mocks in __mocks__/ if available.\nRun: npm test -- --coverage src/features/auth/",
     "sandbox": "workspace-write",
@@ -62,7 +62,7 @@ Test generation is a high-token, low-reasoning task:
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Task: Improve test coverage for src/services/\n\nSteps:\n1. Run coverage: npm test -- --coverage src/services/\n2. Identify files with <80% coverage\n3. For each low-coverage file, add tests for uncovered branches\n4. Re-run coverage and report improvement\n\nConstraints:\n- Don't modify source files, only test files\n- Match existing test patterns\n- Focus on uncovered branches, not redundant happy-path tests\n\nReturn:\n- Before/after coverage percentages\n- Tests added per file\n- Any code that's untestable (dead code, etc.)",
     "sandbox": "workspace-write",
@@ -76,7 +76,7 @@ Test generation is a high-token, low-reasoning task:
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Generate integration tests for the API endpoints in src/api/routes/\n\nRequirements:\n1. Test each endpoint: GET, POST, PUT, DELETE\n2. Test authentication (valid token, invalid token, no token)\n3. Test validation (missing fields, invalid types)\n4. Test error responses (404, 400, 401, 500)\n5. Use the test database config (test.env or jest.config)\n\nRun: npm run test:integration\n\nReturn:\n- Endpoints tested\n- Test count per endpoint\n- Any endpoints that need manual setup (external deps)",
     "sandbox": "workspace-write",
@@ -90,7 +90,7 @@ Test generation is a high-token, low-reasoning task:
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Add snapshot tests for React components in src/components/\n\nFor each component:\n1. Create a test file if it doesn't exist\n2. Add snapshot test for default props\n3. Add snapshot test for key prop variations\n4. Run: npm test -- -u to generate initial snapshots\n\nSkip components that:\n- Have complex external dependencies (mock them instead)\n- Are purely layout (no meaningful snapshot)\n\nReturn:\n- Components with new snapshots\n- Components skipped (and why)",
     "sandbox": "workspace-write",
@@ -175,7 +175,7 @@ For complex test suites, use `codex-reply` to continue the conversation:
 ```json
 // Step 1: Initial test generation
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Generate unit tests for src/utils/validation.ts. Run npm test.",
     "sandbox": "workspace-write",
@@ -186,7 +186,7 @@ For complex test suites, use `codex-reply` to continue the conversation:
 
 // Step 2: Fix failing tests
 {
-  "tool": "mcp__agent1__codex-reply",
+  "tool": "mcp__codex__codex-reply",
   "parameters": {
     "threadId": "abc123",
     "prompt": "Fix the 2 failing tests. The validateEmail function expects lowercase input."
@@ -196,7 +196,7 @@ For complex test suites, use `codex-reply` to continue the conversation:
 
 // Step 3: Add edge cases
 {
-  "tool": "mcp__agent1__codex-reply",
+  "tool": "mcp__codex__codex-reply",
   "parameters": {
     "threadId": "abc123",
     "prompt": "Add edge case tests for null, undefined, and empty string inputs."

@@ -65,13 +65,13 @@ Detects task patterns that should be delegated to Codex and injects guidance:
 **Event:** PreToolUse (Write)
 **Enforcement:** Hard (blocks tool)
 
-Blocks direct creation of substantial new code files (>=25 lines). Requires delegation to `mcp__agent1__codex` for larger code generation tasks.
+Blocks direct creation of substantial new code files (>=25 lines). Requires delegation to `mcp__codex__codex` for larger code generation tasks.
 
 ### `codex--block-explore.sh`
 **Event:** PreToolUse (Task)
 **Enforcement:** Hard (blocks tool)
 
-Blocks the `Explore` subagent. Use `mcp__agent1__codex` with `sandbox: read-only` instead.
+Blocks the `Explore` subagent. Use `mcp__codex__codex` with `sandbox: read-only` instead.
 
 ### `codex--block-test-gen.sh`
 **Event:** PreToolUse (Task)
@@ -92,13 +92,13 @@ Blocks the `doc_comments` subagent. Codex writes documentation directly to files
 Blocks the `diff_digest` subagent. Codex processes large diffs externally, keeping them out of Claude's context.
 
 ### `codex--log-delegation-start.sh`
-**Event:** PreToolUse (mcp__agent1__codex, mcp__agent1__codex-reply, mcp__agent2__codex, mcp__agent2__codex-reply, mcp__agent3__codex, mcp__agent3__codex-reply, mcp__gemini_web__*)
+**Event:** PreToolUse (mcp__codex__codex, mcp__codex__codex-reply, mcp__gemini_web__*)
 **Enforcement:** Audit only
 
 Records delegation start time to `~/.claude/logs/.pending/` for duration tracking. Companion to `codex--log-delegation.sh`.
 
 ### `codex--log-delegation.sh`
-**Event:** PostToolUse (mcp__agent1__codex, mcp__agent2__codex, mcp__agent3__codex, mcp__gemini_web__*)
+**Event:** PostToolUse (mcp__codex__codex, mcp__gemini_web__*)
 **Enforcement:** Audit only
 
 Logs all Codex and Gemini delegations to `~/.claude/logs/delegations.jsonl`. Records timestamp, level, session_id, thread ID, prompt summary, sandbox mode, success status, and `duration_ms` (computed from the PreToolUse start marker).

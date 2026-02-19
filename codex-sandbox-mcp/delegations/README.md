@@ -4,12 +4,12 @@ This directory contains delegation patterns for offloading work from Claude Code
 
 ## How It Works
 
-Claude Code has Codex available as MCP tools: `mcp__agent1__codex`, `mcp__agent2__codex`, `mcp__agent3__codex` (and their `-reply` variants). When Claude calls these tools, they communicate with the Codex MCP server running inside a sandbox.
+Claude Code has Codex available as MCP tools: `mcp__codex__codex` and `mcp__codex__codex-reply`. When Claude calls these tools, they communicate with the Codex MCP server running inside a sandbox.
 
 ```
 Claude Code (orchestrator)
     |
-    | calls mcp__agent1__codex with sandbox="workspace-write"
+    | calls mcp__codex__codex with sandbox="workspace-write"
     v
 Codex MCP Server (sandboxed via Bubblewrap/Seatbelt)
     |
@@ -24,7 +24,7 @@ Returns results to Claude Code
 
 ## MCP Tools
 
-### `mcp__agent1__codex` / `mcp__agent2__codex` / `mcp__agent3__codex` — Start a new Codex session
+### `mcp__codex__codex` — Start a new Codex session
 
 | Parameter | Type | Required | Purpose |
 |---|---|---|---|
@@ -39,7 +39,7 @@ Returns results to Claude Code
 
 **Returns:** `{ threadId: string, content: string }`
 
-### `mcp__agent1__codex-reply` — Continue an existing conversation
+### `mcp__codex__codex-reply` — Continue an existing conversation
 
 | Parameter | Type | Required | Purpose |
 |---|---|---|---|
@@ -55,7 +55,7 @@ Returns results to Claude Code
 ### Safe code editing (recommended default)
 
 ```
-Tool: mcp__agent1__codex
+Tool: mcp__codex__codex
 Parameters:
   prompt: "Add unit tests for the validateEmail function in src/utils/validation.ts.
            Use Jest. Run 'npm test' to verify all tests pass."
@@ -73,7 +73,7 @@ Parameters:
 ### Read-only analysis
 
 ```
-Tool: mcp__agent1__codex
+Tool: mcp__codex__codex
 Parameters:
   prompt: "Review src/auth/ for security vulnerabilities. Check for:
            1. SQL injection
@@ -94,7 +94,7 @@ Parameters:
 ### Task requiring network (use with caution)
 
 ```
-Tool: mcp__agent1__codex
+Tool: mcp__codex__codex
 Parameters:
   prompt: "Run 'npm install' to update dependencies, then run 'npm test'
            to verify nothing breaks. Report any test failures."
@@ -115,7 +115,7 @@ Parameters:
 A typical Claude-Codex delegation cycle:
 
 1. **Claude plans** — decomposes the task, identifies scope and constraints
-2. **Claude delegates** — calls `mcp__agent1__codex` with bounded prompt + sandbox
+2. **Claude delegates** — calls `mcp__codex__codex` with bounded prompt + sandbox
 3. **Codex executes** — edits code, runs tests, reports results
 4. **Claude reviews** — checks the output, decides if more work is needed
 5. **Repeat or merge** — Claude delegates follow-up tasks or presents final result
@@ -126,16 +126,16 @@ A typical Claude-Codex delegation cycle:
 Claude: "I need to add email validation to the signup form."
 
 Step 1 - Claude delegates analysis:
-  mcp__agent1__codex(sandbox="read-only", prompt="List all files related to
+  mcp__codex__codex(sandbox="read-only", prompt="List all files related to
   the signup form. Show the current validation logic.")
 
 Step 2 - Claude delegates implementation:
-  mcp__agent1__codex(sandbox="workspace-write", prompt="Add email validation
+  mcp__codex__codex(sandbox="workspace-write", prompt="Add email validation
   to src/components/SignupForm.tsx using the existing validator pattern.
   Add tests. Run npm test.")
 
 Step 3 - Claude reviews the diff and delegates polish:
-  mcp__agent1__codex(sandbox="workspace-write", prompt="The email validation
+  mcp__codex__codex(sandbox="workspace-write", prompt="The email validation
   works but is missing the error message display. Add an error message
   below the email field. Run npm test.")
 
@@ -146,15 +146,15 @@ Step 4 - Claude presents the final result to the user.
 
 ## Parallel Delegation (Fan-Out / Fan-In)
 
-Claude Code can call multiple MCP tools in a single message. Each agent call (`mcp__agent1__codex`, `mcp__agent2__codex`, `mcp__agent3__codex`) gets its own `threadId` and sandbox. Independent tasks run concurrently for significant speed gains.
+Claude Code can call multiple MCP tools in a single message. Each `mcp__codex__codex` call gets its own `threadId` and sandbox. Independent tasks run concurrently for significant speed gains.
 
 **Prerequisite:** MCP tools must be pre-approved in `~/.claude/settings.local.json` for parallel calls to work seamlessly. When approval prompts are enabled, rejecting the first call in a batch cancels the entire batch. See the [Hooks Wiring](../../README.md#hooks-wiring) section in the project README for the permissions configuration.
 
 ```
 Claude Code (orchestrator)
     |
-    |--- mcp__agent1__codex (read-only)  --> Security audit
-    |--- mcp__agent2__codex (read-only)  --> Performance review
+    |--- mcp__codex__codex (read-only)  --> Security audit
+    |--- mcp__codex__codex (read-only)  --> Performance review
     |--- mcp__gemini_web__web_search    --> Research best practices
     |
     v  (all return in parallel)
@@ -165,7 +165,7 @@ Claude Code synthesizes combined findings
 
 | Scenario | Safe? | Why |
 |---|---|---|
-| 3x `read-only` reviews on the same repo (agent1/agent2/agent3) | Yes | Read-only cannot conflict |
+| 3x `read-only` reviews on the same repo | Yes | Read-only cannot conflict |
 | `workspace-write` tests for `src/auth/` + `workspace-write` tests for `src/billing/` | Yes | Different directories, no overlap |
 | `read-only` review + `workspace-write` test gen for different modules | Yes | No file overlap |
 | Web search + Codex analysis | Yes | Completely independent tools |
@@ -177,23 +177,23 @@ Claude Code synthesizes combined findings
 ```
 Claude receives: "Do a thorough review of src/auth/"
 
-Claude emits three Codex calls in ONE message (mcp__agent1__codex, mcp__agent2__codex, mcp__agent3__codex):
+Claude emits three mcp__codex__codex calls in ONE message:
 
-Call 1 (mcp__agent1__codex):
+Call 1:
   prompt: "Security review of src/auth/. Check for injection, auth bypass,
            hardcoded secrets. Report structured findings."
   sandbox: "read-only"
   approval-policy: "never"
   cwd: "/Users/you/Git/my-project"
 
-Call 2 (mcp__agent2__codex):
+Call 2:
   prompt: "Performance review of src/auth/. Check for N+1 queries, missing
            indexes, unnecessary allocations. Report structured findings."
   sandbox: "read-only"
   approval-policy: "never"
   cwd: "/Users/you/Git/my-project"
 
-Call 3 (mcp__agent3__codex):
+Call 3:
   prompt: "Code quality review of src/auth/. Check for dead code, unclear
            naming, missing error handling. Report structured findings."
   sandbox: "read-only"
@@ -215,7 +215,7 @@ Call 1 (web search):
   mcp__gemini_web__web_search(query="OWASP authentication best practices 2026")
 
 Call 2 (Codex):
-  mcp__agent1__codex(
+  mcp__codex__codex(
     prompt: "Review src/auth/ for security vulnerabilities. Report findings.",
     sandbox: "read-only",
     cwd: "/Users/you/Git/my-project"
@@ -227,13 +227,13 @@ the latest OWASP guidelines from the web search.
 
 ### Follow-ups after parallel calls
 
-After parallel initial calls return, use `mcp__agent1__codex-reply` to continue specific threads:
+After parallel initial calls return, use `mcp__codex__codex-reply` to continue specific threads:
 
 ```
 Parallel fan-out returns threadId-A, threadId-B, threadId-C
 
 Claude reviews results and decides threadId-A needs a fix:
-  mcp__agent1__codex-reply(
+  mcp__codex__codex-reply(
     threadId: "threadId-A",
     prompt: "Fix the SQL injection in src/auth/login.ts line 42."
   )

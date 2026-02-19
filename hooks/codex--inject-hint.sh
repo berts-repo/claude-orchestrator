@@ -15,7 +15,7 @@ if echo "$prompt" | grep -Eiq '\b(write|build|create|implement|make|code)\b.{0,3
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a CODE GENERATION task (new file/script/tool). Delegate to Codex: mcp__agent1__codex with sandbox='workspace-write', approval-policy='on-failure'. Always set cwd to absolute path. Do NOT use the Write tool directly for substantial new code files."
+    "additionalContext": "This looks like a CODE GENERATION task (new file/script/tool). Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Always set cwd to absolute path. Do NOT use the Write tool directly for substantial new code files."
   }
 }
 EOF
@@ -28,7 +28,7 @@ if echo "$prompt" | grep -Eiq '\b(write|add|generate|create|implement)\b.{0,20}\
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a TEST GENERATION task. Delegate to Codex: mcp__agent1__codex with sandbox='workspace-write', approval-policy='on-failure'. Include test command in prompt. Evaluate parallel fan-out: if multiple modules, split one Codex call per module. If best practices matter, add a Gemini web_search."
+    "additionalContext": "This looks like a TEST GENERATION task. Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Include test command in prompt. Evaluate parallel fan-out: if multiple modules, split one Codex call per module. If best practices matter, add a Gemini web_search."
   }
 }
 EOF
@@ -54,7 +54,7 @@ if echo "$prompt" | grep -Eiq '\b(review|audit|check|analyze|scan)\b.{0,20}\b(co
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__agent1__codex with sandbox='read-only', approval-policy='never'. Evaluate parallel fan-out: split by concern (security + bugs + quality). If framework-specific, add a Gemini web_search. See codex-sandbox-mcp/delegations/templates/parallel-review.txt."
+    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Evaluate parallel fan-out: split by concern (security + bugs + quality). If framework-specific, add a Gemini web_search. See codex-sandbox-mcp/delegations/templates/parallel-review.txt."
   }
 }
 EOF
@@ -67,7 +67,7 @@ if echo "$prompt" | grep -Eiq '\breview\b.{0,30}(~/|/|\./|\bthis\b|\bthe\b)'; th
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__agent1__codex with sandbox='read-only', approval-policy='never'. Evaluate parallel fan-out: split by concern (security + bugs + quality). If framework-specific, add a Gemini web_search. See codex-sandbox-mcp/delegations/templates/parallel-review.txt."
+    "additionalContext": "This looks like a CODE REVIEW task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Evaluate parallel fan-out: split by concern (security + bugs + quality). If framework-specific, add a Gemini web_search. See codex-sandbox-mcp/delegations/templates/parallel-review.txt."
   }
 }
 EOF
@@ -80,7 +80,7 @@ if echo "$prompt" | grep -Eiq '\b(refactor|restructure|reorganize|clean\s*up|sim
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a REFACTORING task. Delegate to Codex: mcp__agent1__codex with sandbox='workspace-write', approval-policy='on-failure'. Include test command in prompt. Evaluate parallel fan-out: Codex read-only analysis + Gemini best practices research in parallel first, then sequential write."
+    "additionalContext": "This looks like a REFACTORING task. Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Include test command in prompt. Evaluate parallel fan-out: Codex read-only analysis + Gemini best practices research in parallel first, then sequential write."
   }
 }
 EOF
@@ -93,7 +93,7 @@ if echo "$prompt" | grep -Eiq '\b(document|add\s*(docs?|docstrings?|comments?|js
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a DOCUMENTATION task. Delegate to Codex: mcp__agent1__codex with sandbox='workspace-write', approval-policy='on-failure'. Evaluate parallel fan-out: if multiple modules, split one Codex call per module."
+    "additionalContext": "This looks like a DOCUMENTATION task. Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Evaluate parallel fan-out: if multiple modules, split one Codex call per module."
   }
 }
 EOF
@@ -106,7 +106,7 @@ if echo "$prompt" | grep -Eiq '\b(changelog|release\s*notes?|what\s*(changed|hap
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a CHANGELOG GENERATION task. Delegate to Codex: mcp__agent1__codex with sandbox='read-only', approval-policy='never'. Codex reads git log and diffs externally, keeping full commit history out of Claude's context."
+    "additionalContext": "This looks like a CHANGELOG GENERATION task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Codex reads git log and diffs externally, keeping full commit history out of Claude's context."
   }
 }
 EOF
@@ -119,7 +119,7 @@ if echo "$prompt" | grep -Eiq '\b(fix\s*(lint|style|format)|run\s*(linter|eslint
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like a LINT/FORMAT FIXING task. Delegate to Codex: mcp__agent1__codex with sandbox='workspace-write', approval-policy='on-failure'. Codex runs the linter and auto-fixes externally, returning only a summary of changes."
+    "additionalContext": "This looks like a LINT/FORMAT FIXING task. Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Codex runs the linter and auto-fixes externally, returning only a summary of changes."
   }
 }
 EOF
@@ -132,7 +132,7 @@ if echo "$prompt" | grep -Eiq '\b(investigate|debug|diagnose|stack\s*trace|why\s
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This looks like an ERROR ANALYSIS task. Delegate to Codex: mcp__agent1__codex with sandbox='read-only', approval-policy='never'. Codex investigates the codebase against the error externally, keeping stack traces and source files out of Claude's context."
+    "additionalContext": "This looks like an ERROR ANALYSIS task. Delegate to Codex: mcp__codex__codex with sandbox='read-only', approval-policy='never'. Codex investigates the codebase against the error externally, keeping stack traces and source files out of Claude's context."
   }
 }
 EOF

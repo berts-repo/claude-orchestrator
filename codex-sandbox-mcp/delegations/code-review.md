@@ -22,7 +22,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Review the changes in the last 3 commits. Check for:\n1. Logic errors\n2. Missing error handling\n3. Security issues\n4. Performance concerns\n\nProvide a structured review with severity ratings.",
     "sandbox": "read-only",
@@ -40,7 +40,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Review the changes in commits abc123..def456.\n\nFor each file changed:\n1. Summarize the change\n2. Note any concerns (bugs, security, performance)\n3. Suggest improvements\n\nProvide an overall assessment: APPROVE, REQUEST_CHANGES, or COMMENT.",
     "sandbox": "read-only",
@@ -54,7 +54,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Security review of src/auth/ directory.\n\nCheck for:\n1. SQL injection vulnerabilities\n2. XSS vulnerabilities\n3. Missing input validation\n4. Hardcoded secrets or credentials\n5. Insecure cryptographic practices\n6. Authentication/authorization bypasses\n\nFor each finding:\n- Severity: CRITICAL, HIGH, MEDIUM, LOW\n- Location: file:line\n- Description: What's wrong\n- Recommendation: How to fix",
     "sandbox": "read-only",
@@ -68,7 +68,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Review the architecture of the src/services/ directory.\n\nAnalyze:\n1. Separation of concerns\n2. Dependency direction (are dependencies pointing inward?)\n3. Coupling between modules\n4. Error handling patterns\n5. Testability\n\nProvide recommendations for improving the structure.",
     "sandbox": "read-only",
@@ -82,7 +82,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Performance review of src/api/handlers/.\n\nCheck for:\n1. N+1 query patterns\n2. Missing database indexes (based on query patterns)\n3. Unnecessary data fetching\n4. Missing caching opportunities\n5. Blocking operations in async code\n6. Memory leaks (unclosed resources, growing collections)\n\nFor each finding, estimate impact and suggest fix.",
     "sandbox": "read-only",
@@ -96,7 +96,7 @@
 
 ```json
 {
-  "tool": "mcp__agent1__codex",
+  "tool": "mcp__codex__codex",
   "parameters": {
     "prompt": "Quality review of src/utils/.\n\nCheck for:\n1. Dead code (unused functions, unreachable branches)\n2. Code duplication\n3. Overly complex functions (cyclomatic complexity)\n4. Missing error handling\n5. Inconsistent naming conventions\n6. Magic numbers/strings\n\nPrioritize findings by impact on maintainability.",
     "sandbox": "read-only",
