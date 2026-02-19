@@ -99,6 +99,7 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `gemini--require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
 | `codex--inject-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks and injects Codex guidance |
+| `codex--enforce-code-write.sh` | PreToolUse (Write) | Blocks direct creation of substantial new code files (≥25 lines); requires Codex delegation |
 | `codex--block-explore.sh` | PreToolUse (Task) | Blocks Explore subagent — use Codex read-only instead |
 | `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
@@ -241,19 +242,14 @@ chmod 600 gemini-web-mcp/server/.env
 # 5. Register MCP servers
 claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
 
-# 6. Install hooks
-mkdir -p ~/.claude/hooks
-ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
+# 6. Install hooks and wire settings
+bash scripts/sync-hooks.sh   # symlinks hooks/*.sh → ~/.claude/hooks/ and writes ~/.claude/settings.json
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
-# 8. Wire hooks in settings
-# Hooks must be registered in ~/.claude/settings.json to run.
-# See the "Hooks Wiring" section below for the full configuration.
-
-# 9. Verify setup
+# 8. Verify setup
 claude mcp list                # gemini-web should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/          # slash commands should be present
@@ -306,115 +302,13 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 
 ### Full hooks configuration
 
-Edit `~/.claude/settings.json` to wire all hooks. Replace `YOUR_USER` with your actual username:
+Hook registration is managed declaratively via `hooks/manifest.json`. Run `bash scripts/sync-hooks.sh` to apply — it writes `~/.claude/settings.json` and creates symlinks in `~/.claude/hooks/`. No manual JSON editing required.
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/gemini--inject-web-search-hint.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--inject-hint.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/security--restrict-bash-network.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/security--block-destructive-commands.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/security--guard-sensitive-reads.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--log-delegation-start.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--block-explore.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--block-test-gen.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--block-doc-comments.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--block-diff-digest.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/codex--log-delegation.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/YOUR_USER/.claude/hooks/gemini--require-web-if-recency.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+To add a new hook:
+1. Ask Codex to create the `.sh` file and add its entry to `hooks/manifest.json` (both within repo `cwd`)
+2. Run `bash scripts/sync-hooks.sh` to apply
+
+> **Note:** Never ask Codex to touch `~/.claude/` directly — it is blocked by AGENTS.md security rules. `sync-hooks.sh` is the bridge.
 
 ---
 
