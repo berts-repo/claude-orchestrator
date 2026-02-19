@@ -9,6 +9,19 @@ prompt="$(echo "$payload" | jq -r '.prompt // ""' | tr '[:upper:]' '[:lower:]')"
 # Patterns that should be delegated to Codex
 # Order matters: more specific patterns must come before broader ones.
 
+# New code generation (scraper, CLI, script, server, tool, etc.)
+if echo "$prompt" | grep -Eiq '\b(write|build|create|implement|make|code)\b.{0,30}\b(scraper|crawler|script|cli|tool|server|service|bot|parser|api|app|plugin|extension|module|class|function)\b'; then
+  cat <<'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "This looks like a CODE GENERATION task (new file/script/tool). Delegate to Codex: mcp__codex__codex with sandbox='workspace-write', approval-policy='on-failure'. Always set cwd to absolute path. Do NOT use the Write tool directly for substantial new code files."
+  }
+}
+EOF
+  exit 0
+fi
+
 # Test generation
 if echo "$prompt" | grep -Eiq '\b(write|add|generate|create|implement)\b.{0,20}\btests?\b'; then
   cat <<'EOF'
