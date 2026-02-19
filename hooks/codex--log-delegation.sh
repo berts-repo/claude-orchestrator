@@ -5,6 +5,9 @@
 # Codex threads are JSONL — each turn appends to {threadId}.jsonl
 # Keeps the last MAX_ENTRIES summary entries (FIFO rotation)
 # Detail files expire after RETENTION_DAYS
+# HOOK_EVENT: PostToolUse
+# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_TIMEOUT: 10
 set -euo pipefail
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
@@ -26,7 +29,7 @@ tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
 # Only log Codex and Gemini calls
 case "$tool_name" in
-  mcp__codex__codex|mcp__codex__codex-reply) tool_type="codex" ;;
+  mcp__delegate__codex|mcp__delegate__codex-reply) tool_type="codex" ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) tool_type="gemini" ;;
   *) exit 0 ;;
 esac
@@ -78,6 +81,18 @@ compute_duration() {
 # Build log entry based on tool type
 if [[ "$tool_type" == "codex" ]]; then
   thread_id=$(echo "$tool_response" | jq -r '.threadId // "unknown"')
+
+  # Reject any thread_id that cannot be a safe filename component.
+  # This prevents path traversal: a value like "../../.ssh/authorized_keys"
+  # would otherwise be used directly in "${DETAIL_DIR}/${thread_id}.jsonl".
+  if [[ "$thread_id" != "unknown" && "$thread_id" != "null" && -n "$thread_id" \
+        && ! "$thread_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "$(log_json "error" "delegation" "invalid_thread_id" \
+      --arg raw_thread_id "$thread_id" \
+      --arg tool "$tool_name")" >> "$LOG_FILE"
+    exit 0
+  fi
+
   sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
   approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
   cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
@@ -169,7 +184,12 @@ cleanup_detail() {
   local line="$1"
   local old_detail
   old_detail=$(echo "$line" | jq -r '.detail // ""')
-  [[ -f "$old_detail" ]] && rm -f "$old_detail"
+  [[ -z "$old_detail" || ! -f "$old_detail" ]] && return
+  # Resolve the real path (file must exist, so -m / non-GNU realpath is fine)
+  # and confirm it stays inside DETAIL_DIR before deleting.
+  local canon
+  canon=$(readlink -f "$old_detail" 2>/dev/null || realpath "$old_detail" 2>/dev/null) || return
+  [[ "$canon" == "${DETAIL_DIR}/"* ]] && rm -f "$old_detail"
 }
 rotate_jsonl "$LOG_FILE" "$MAX_ENTRIES" cleanup_detail
 
