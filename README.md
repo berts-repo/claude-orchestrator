@@ -104,8 +104,8 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
 | `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__codex__codex, mcp__gemini_web__*) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__codex__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__gemini_web__*) | Records start time for duration tracking |
+| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
@@ -243,7 +243,7 @@ chmod 600 gemini-web-mcp/server/.env
 claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
 
 # 6. Install hooks and apply manifest wiring
-bash scripts/sync-hooks.sh   # applies hooks/manifest.json (updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json)
+bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
@@ -269,7 +269,7 @@ claude "search the web for MCP protocol specification"
 
 ## Hooks Wiring
 
-Hook registration is managed declaratively in `hooks/manifest.json`. Run `bash scripts/sync-hooks.sh` to apply updates (it manages both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` entries). Never manually edit `~/.claude/settings.json` for hook wiring.
+Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync-hooks.sh` to apply updates (it discovers these headers and manages both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` entries). Never manually edit `~/.claude/settings.json` for hook wiring.
 
 ### Pre-approve MCP tools (optional, enables parallel delegation)
 
@@ -282,8 +282,8 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
       "mcp__gemini_web__web_search",
       "mcp__gemini_web__web_fetch",
       "mcp__gemini_web__web_summarize",
-      "mcp__codex__codex",
-      "mcp__codex__codex-reply"
+      "mcp__delegate__codex",
+      "mcp__delegate__codex-reply"
     ],
     "deny": [],
     "ask": []
@@ -302,10 +302,10 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 
 ### Full hooks configuration
 
-Hook registration is managed declaratively via `hooks/manifest.json`. Run `bash scripts/sync-hooks.sh` to apply — it writes `~/.claude/settings.json` and creates symlinks in `~/.claude/hooks/`. No manual JSON editing required.
+Hook registration is managed via frontmatter headers in each `hooks/*.sh` file. Run `bash scripts/sync-hooks.sh` to apply — it discovers the headers, writes `~/.claude/settings.json`, and creates symlinks in `~/.claude/hooks/`. No manual JSON editing required.
 
 To add a new hook:
-1. Ask Codex to create the `.sh` file and add its entry to `hooks/manifest.json` (both within repo `cwd`)
+1. Ask Codex to create the `.sh` file with the required frontmatter (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`)
 2. Run `bash scripts/sync-hooks.sh` to apply
 
 > **Note:** Never ask Codex to touch `~/.claude/` directly — it is blocked by AGENTS.md security rules. `sync-hooks.sh` is the bridge.
