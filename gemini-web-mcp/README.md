@@ -68,6 +68,7 @@ Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protec
 | `security--restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
 | `gemini--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use web_search" context |
 | `gemini--require-web-if-recency.sh` | Hook | Blocks recency claims without source URLs |
+| `codex--enforce-code-write.sh` | Hook | Blocks direct large code file creation; enforces Codex delegation |
 
 ### Trust Boundaries
 
@@ -102,6 +103,7 @@ gemini-web-mcp/
 │       └── gemini-provider.mjs  # Gemini + Google Search implementation
 ../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
     ├── gemini--inject-web-search-hint.sh
+    ├── codex--enforce-code-write.sh
     ├── security--restrict-bash-network.sh
     └── gemini--require-web-if-recency.sh
 ```
@@ -233,11 +235,15 @@ claude mcp list
 # gemini-web: ... - ✓ Connected
 ```
 
-### Step 6 — Install Hooks and Wire Settings
+### Step 6 — Install Hooks via Manifest
 
-Hook installation and `settings.json` wiring are covered in the [project root README](../README.md):
-- **Quick Start step 6** — symlink hook scripts
-- **Hooks Wiring section** — full `settings.json` configuration
+Hook registration is managed by `hooks/manifest.json`. From the repo root, run:
+
+```bash
+bash scripts/sync-hooks.sh
+```
+
+This updates both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` wiring. Never manually edit `~/.claude/settings.json` for hook wiring.
 
 ### Step 7 — Verify End-to-End
 
@@ -390,9 +396,9 @@ Common causes:
 ### Claude doesn't use web_search
 
 1. Check MCP registration: `claude mcp list` — `gemini-web` should appear
-2. Check hooks are symlinked: `ls -la ~/.claude/hooks/`
+2. Re-run hook sync from repo root: `bash scripts/sync-hooks.sh`
 3. Make sure your prompt contains a trigger phrase like "search the web"
-4. Check `~/.claude/settings.json` has the hooks wired correctly (see [Hooks Wiring](../README.md#hooks-wiring))
+4. Confirm hooks are present: `ls -la ~/.claude/hooks/` and `cat hooks/manifest.json`
 
 ### Rate limit errors
 

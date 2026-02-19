@@ -242,8 +242,8 @@ chmod 600 gemini-web-mcp/server/.env
 # 5. Register MCP servers
 claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
 
-# 6. Install hooks and wire settings
-bash scripts/sync-hooks.sh   # symlinks hooks/*.sh → ~/.claude/hooks/ and writes ~/.claude/settings.json
+# 6. Install hooks and apply manifest wiring
+bash scripts/sync-hooks.sh   # applies hooks/manifest.json (updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json)
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
@@ -269,7 +269,7 @@ claude "search the web for MCP protocol specification"
 
 ## Hooks Wiring
 
-After symlinking hook scripts (Quick Start step 6), register them in `~/.claude/settings.json`. Hooks are not active until wired here.
+Hook registration is managed declaratively in `hooks/manifest.json`. Run `bash scripts/sync-hooks.sh` to apply updates (it manages both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` entries). Never manually edit `~/.claude/settings.json` for hook wiring.
 
 ### Pre-approve MCP tools (optional, enables parallel delegation)
 

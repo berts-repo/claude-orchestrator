@@ -5,11 +5,10 @@ All Claude Code hooks for the orchestration system. Hooks are shell scripts that
 ## Installation
 
 ```bash
-mkdir -p ~/.claude/hooks
-ln -s ~/git/claude-orchestrator/hooks/*.sh ~/.claude/hooks/
+bash scripts/sync-hooks.sh
 ```
 
-Hooks must also be registered in `~/.claude/settings.json` to run. See the [Hooks Wiring](../README.md#hooks-wiring) section in the project README for the full settings configuration.
+Hook registration is managed in `hooks/manifest.json`. Run `bash scripts/sync-hooks.sh` from the repo root to apply changes (it updates both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` wiring). Never manually edit `~/.claude/settings.json` for hook wiring.
 
 ---
 
@@ -61,6 +60,12 @@ Detects task patterns that should be delegated to Codex and injects guidance:
 - Test generation, code review, security audit
 - Refactoring, documentation, changelog generation
 - Error analysis, lint/format fixing, dependency audit
+
+### `codex--enforce-code-write.sh`
+**Event:** PreToolUse (Write)
+**Enforcement:** Hard (blocks tool)
+
+Blocks direct creation of substantial new code files (>=25 lines). Requires delegation to `mcp__codex__codex` for larger code generation tasks.
 
 ### `codex--block-explore.sh`
 **Event:** PreToolUse (Task)
