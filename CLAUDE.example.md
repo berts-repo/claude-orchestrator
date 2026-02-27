@@ -43,3 +43,37 @@ Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):
 | `test_gen` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
 | `doc_comments` | `mcp__codex__codex` with `sandbox: "workspace-write"` |
 | `diff_digest` | `mcp__codex__codex` with `sandbox: "read-only"` |
+
+## Hook Response Handling
+
+When a hook blocks a command with language suggesting approval is possible (e.g., "without explicit user approval", "requires confirmation", "not permitted unless approved"):
+
+1. **Do NOT silently adapt** — never work around a blocked command without user input
+2. **Display the blocked command** in a fenced code block so the user can easily copy it:
+   ```bash
+   <the exact blocked command>
+   ```
+3. **Explain the risk** — briefly describe why the command was blocked and what it would do
+4. **Wait for user confirmation** — ask the user to run the command manually if they choose, then say "okay" (or similar) when ready to continue
+5. **Only proceed** after the user explicitly confirms — do not retry the command automatically
+
+This ensures the user maintains control over destructive or high-risk operations rather than Claude autonomously deciding to work around safety boundaries.
+
+**Example flow:**
+```
+Hook blocks: "rm -rf /path not permitted without explicit user approval"
+↓
+Claude displays:
+  "This command was blocked:
+
+  ```bash
+  rm -rf /path
+  ```
+
+  This would permanently delete /path and all its contents.
+  If you want to proceed, run it manually and say 'okay' when done."
+↓
+User runs command manually (or skips it), then says "okay"
+↓
+Claude continues with the next step
+```
