@@ -31,6 +31,7 @@ Blocks direct network access via Bash commands (`curl`, `wget`, `nc`, `ssh`, etc
 
 ### `security--block-destructive-commands.sh`
 **Event:** PreToolUse (Bash)
+**Enforcement:** Hard (blocks tool, but approvable)
 
 Blocks destructive commands that could cause data loss:
 - `rm -rf`, `rm -f`, `rm --recursive`, `rm --force`
@@ -38,6 +39,8 @@ Blocks destructive commands that could cause data loss:
 - `git reset --hard`, `git checkout .`
 - `git push --force`, `git push -f`
 - `git clean -f`, `git branch -D`
+
+**Approval flow:** When blocked, Claude displays the command in a code block for easy copying, explains the risk, and waits for the user to run it manually and confirm "okay" before continuing. See "Hook Response Handling" in CLAUDE.md.
 
 ### `security--log-security-event.sh`
 **Not a hook** -- helper script called by PreToolUse hooks when they deny an action. Writes to `~/.claude/logs/security-events.jsonl` with FIFO rotation (last 200 entries).
