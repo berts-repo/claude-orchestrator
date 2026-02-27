@@ -108,11 +108,27 @@ echo
 
 new_hooks="$(jq -s --arg hdir "$HOOKS_LINK_DIR" '
   . as $entries |
-  [ $entries[] | {event, matcher: (.matcher // "")} ] | unique_by([.event, .matcher]) as $keys |
+  [
+    $entries[]
+    | . as $entry
+    | (
+        if (($entry.matcher // "") | contains("|")) then
+          ($entry.matcher
+            | split("|")
+            | map(gsub("^\\s+|\\s+$"; ""))
+            | map(select(length > 0))
+          )
+        else
+          [($entry.matcher // "")]
+        end
+      )[]
+    | $entry + { matcher: . }
+  ] as $expanded_entries |
+  [ $expanded_entries[] | {event, matcher: (.matcher // "")} ] | unique_by([.event, .matcher]) as $keys |
   reduce $keys[] as $k (
     {};
     . as $acc |
-    [ $entries[]
+    [ $expanded_entries[]
       | select(.event == $k.event and (.matcher // "") == $k.matcher)
       | { type: "command", command: ($hdir + "/" + .script), timeout: .timeout }
     ] as $cmds |
