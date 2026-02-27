@@ -2,6 +2,7 @@
 # Shared logging helpers for Claude Orchestrator hooks.
 # Source this file — do not execute directly.
 # Provides: log_json(), rotate_jsonl(), SESSION_ID
+# HOOK_HELPER: true
 
 # Guard against double-sourcing
 [[ -n "${_LOG_HELPERS_LOADED:-}" ]] && return 0

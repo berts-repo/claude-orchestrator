@@ -2,6 +2,8 @@
 # UserPromptSubmit hook
 # Detects explicit web search intent and injects context
 # directing Claude to use the web_search MCP tool.
+# HOOK_EVENT: UserPromptSubmit
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 payload="$(cat)"

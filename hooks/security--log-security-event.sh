@@ -2,6 +2,7 @@
 # Security event logger — called by PreToolUse hooks when they deny an action.
 # NOT a hook itself. Invoked by existing hooks before they output the deny JSON.
 # Writes to ~/.claude/logs/security-events.jsonl with FIFO rotation.
+# HOOK_HELPER: true
 set -euo pipefail
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
