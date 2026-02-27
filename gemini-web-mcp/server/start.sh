@@ -2,7 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/home/me/.local/share/mise/installs/node/25.2.1/bin/node"
+# Resolve node from PATH instead of hardcoding — works with any version manager
+NODE="$(command -v node)"
+if [ -z "$NODE" ]; then
+  echo "[gemini-web] Node.js not found in PATH" >&2
+  exit 1
+fi
 SERVER="$SCRIPT_DIR/server.mjs"
 
 # Source API key: try GNOME keyring first, fall back to .env file
