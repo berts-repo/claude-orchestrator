@@ -3,7 +3,7 @@
 # Blocks reads of sensitive files to prevent credential exfiltration.
 # Allows ~/.config/hypr/ for legitimate window manager config editing.
 # HOOK_EVENT: PreToolUse
-# HOOK_MATCHER: Read|Bash
+# HOOK_MATCHER: Read|Bash|Glob
 # HOOK_TIMEOUT: 5
 set -euo pipefail
 
@@ -16,8 +16,8 @@ deny_on_parse_error() {
 
 tool_name=$(echo "$payload" | jq -r '.tool_name // ""' 2>/dev/null) || deny_on_parse_error
 
-# Only check Read and Bash tools
-if [[ "$tool_name" != "Read" && "$tool_name" != "Bash" ]]; then
+# Only check Read, Glob, and Bash tools
+if [[ "$tool_name" != "Read" && "$tool_name" != "Glob" && "$tool_name" != "Bash" ]]; then
   exit 0
 fi
 
@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 # Helper to deny access
 deny() {
   local reason="$1"
-  "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_command:-}" "medium" &>/dev/null || true
+  "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_pattern:-}${raw_command:-}" "medium" &>/dev/null || true
   cat <<EOF
 {
   "hookSpecificOutput": {
@@ -41,8 +41,13 @@ EOF
 }
 
 # Extract the relevant input
-if [[ "$tool_name" == "Read" ]]; then
-  raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || deny_on_parse_error
+if [[ "$tool_name" == "Read" || "$tool_name" == "Glob" ]]; then
+  if [[ "$tool_name" == "Read" ]]; then
+    raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || deny_on_parse_error
+  else
+    raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.path // ""' 2>/dev/null) || deny_on_parse_error
+    raw_pattern=$(printf '%s' "$payload" | jq -r '.tool_input.pattern // ""' 2>/dev/null) || deny_on_parse_error
+  fi
 
   # Canonicalize path to prevent symlink/traversal bypasses
   # Use realpath to resolve symlinks and ../ components
@@ -60,6 +65,11 @@ if [[ "$tool_name" == "Read" ]]; then
   else
     # File doesn't exist yet - normalize the path components
     target=$(realpath -m -- "$raw_path" 2>/dev/null) || target="$raw_path"
+  fi
+
+  # Include glob pattern so path+pattern based attempts are inspectable in logs/matching.
+  if [[ "$tool_name" == "Glob" && -n "${raw_pattern:-}" ]]; then
+    target="$target $raw_pattern"
   fi
 else
   # For Bash, check the command for cat/head/tail of sensitive paths
