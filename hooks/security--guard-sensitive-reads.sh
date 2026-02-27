@@ -2,6 +2,9 @@
 # PreToolUse hook
 # Blocks reads of sensitive files to prevent credential exfiltration.
 # Allows ~/.config/hypr/ for legitimate window manager config editing.
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: Read|Bash
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 payload="$(cat)"

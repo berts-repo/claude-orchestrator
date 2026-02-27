@@ -7,6 +7,8 @@
 # - Keyword-based detection is bypassable via synonyms
 # - Cannot verify that cited URLs are real or match claims
 # - Best-effort guardrail, not a hard security boundary
+# HOOK_EVENT: Stop
+# HOOK_TIMEOUT: 10
 set -euo pipefail
 
 payload="$(cat)"

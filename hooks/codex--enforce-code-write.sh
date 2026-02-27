@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse hook: Enforce Codex delegation for large new code file writes.
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: Write
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 payload="$(cat)"

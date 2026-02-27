@@ -2,6 +2,9 @@
 # PreToolUse hook
 # Records delegation start time for duration tracking.
 # Companion to codex--log-delegation.sh (PostToolUse) which computes duration_ms.
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"

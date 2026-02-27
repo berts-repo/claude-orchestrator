@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher: Bash)
 # Blocks destructive commands that could cause data loss.
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: Bash
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 deny_on_parse_error() {

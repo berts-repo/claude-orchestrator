@@ -2,6 +2,9 @@
 # PreToolUse hook (matcher: Bash)
 # Blocks Bash commands that make direct network connections.
 # Forces all web access through the web_search MCP tool.
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: Bash
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 deny_on_parse_error() {

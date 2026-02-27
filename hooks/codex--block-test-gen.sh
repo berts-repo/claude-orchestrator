@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse hook: Block test_gen subagent
+# HOOK_EVENT: PreToolUse
+# HOOK_MATCHER: Task
+# HOOK_TIMEOUT: 5
 set -euo pipefail
 
 payload="$(cat)"
