@@ -40,7 +40,7 @@ Blocks destructive commands that could cause data loss:
 - `git push --force`, `git push -f`
 - `git clean -f`, `git branch -D`
 
-**Approval flow:** When blocked, Claude displays the command in a code block for easy copying, explains the risk, and waits for the user to run it manually and confirm "okay" before continuing. See "Hook Response Handling" in CLAUDE.md.
+**Approval flow:** When blocked, Claude uses AskUserQuestion with the raw command for easy copying.
 
 ### `security--log-security-event.sh`
 **Not a hook** -- helper script called by PreToolUse hooks when they deny an action. Writes to `~/.claude/logs/security-events.jsonl` with FIFO rotation (last 200 entries).
@@ -137,9 +137,9 @@ Validates that Claude cited sources when making time-sensitive claims. Blocks re
 
 The blocked subagents are replaced by Codex delegation because:
 
-| Subagent | Limitation | Codex Advantage | Savings |
-|----------|-----------|-----------------|---------|
-| `Explore` | Returns findings to Claude's context | External processing, summary only | ~90% |
-| `test_gen` | Skeletons with TODO assertions | Complete tests + verification | ~97% |
-| `doc_comments` | Text output only | Writes directly to files | ~95% |
-| `diff_digest` | Summary in Claude's context | Summary stays external | ~95% |
+| Subagent | Limitation | Codex Advantage |
+|----------|-----------|-----------------|
+| `Explore` | Returns findings to Claude's context | External processing, summary only |
+| `test_gen` | Skeletons with TODO assertions | Complete tests + verification |
+| `doc_comments` | Text output only | Writes directly to files |
+| `diff_digest` | Summary in Claude's context | Summary stays external |
