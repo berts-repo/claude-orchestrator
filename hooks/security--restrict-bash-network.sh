@@ -26,8 +26,8 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 command="$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\\$(){}[]" | tr -s '[:space:]' ' ')"
 
 # Match common network client commands and programming language HTTP calls
-# Use (^|[^a-zA-Z0-9_/-]) to ensure we match commands, not paths like .ssh/
-if printf '%s\n' "$command" | grep -Eiq '(^|[^a-zA-Z0-9_/-])(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m)( |$|;)|/dev/tcp/|python[23]?\s.*\b(requests|urllib|http\.client|aiohttp|httpx)\b|node\s.*\b(fetch|http|https|axios|got|request)\b|ruby\s.*\b(net.http|open-uri|httparty|faraday)\b|php\s.*\b(curl_exec|file_get_contents\s*\(\s*["\x27]https?)\b'; then
+# Require command-token context so ".ssh" path segments do not match "ssh".
+if printf '%s\n' "$command" | grep -Eiq '(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m)([[:space:];]|$)|/dev/tcp/|python[23]?\s.*\b(requests|urllib|http\.client|aiohttp|httpx)\b|node\s.*\b(fetch|http|https|axios|got|request)\b|ruby\s.*\b(net.http|open-uri|httparty|faraday)\b|php\s.*\b(curl_exec|file_get_contents\s*\(\s*["\x27]https?)\b'; then
   matched=$(printf '%s' "$command" | grep -Eio '(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m|/dev/tcp/|requests|urllib|fetch|http\.client)' | head -1)
   "$SCRIPT_DIR/security--log-security-event.sh" "restrict-bash-network" "Bash" "$matched" "$raw_command" "medium" &>/dev/null || true
   cat <<'EOF'
