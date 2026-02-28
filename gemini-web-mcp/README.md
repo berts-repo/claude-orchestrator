@@ -276,7 +276,7 @@ What should happen:
 
 The server uses the Model Context Protocol over **stdio** (standard input/output). There are no ports or HTTP — Claude Code launches the server as a child process and communicates via JSON-RPC messages over stdin/stdout.
 
-The server registers one tool, `web_search`, which:
+The server registers one tool (`web_search`) and one resource (`search://cache/stats`), both described below.
 
 1. **Rate limits** — 30 requests per 60 seconds (in-memory counter)
 2. **Sanitizes the query** — strips control characters, HTML tags, collapses whitespace, caps at 500 characters
@@ -353,6 +353,58 @@ Sources:
 - Node.js Download Page — https://nodejs.org/en/download
 --- END UNTRUSTED WEB CONTENT ---
 ```
+
+## MCP Resources
+
+MCP has three kinds of things a server can expose:
+
+- **Tools** — actions a client *calls* (like a function). Your `web_search` is a tool.
+- **Prompts** — templates a client can *retrieve and inject* into a conversation.
+- **Resources** — data a client can *read* at a URI, like fetching a URL.
+
+Resources are addressable, read-only data. Instead of calling a tool with arguments, a client requests a URI and your server returns the content at that address. The client discovers available resources via `resources/list` and reads one via `resources/read`.
+
+### `search://cache/stats`
+
+Returns a live JSON snapshot of the in-memory search cache.
+
+**Request:** `resources/read` with `uri: "search://cache/stats"`
+
+**Response (`application/json`):**
+```json
+{
+  "entries": 12,
+  "maxEntries": 100,
+  "ttlMs": 300000,
+  "enabled": true
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `entries` | Number of cached queries currently stored (expired entries are evicted before this is computed) |
+| `maxEntries` | Capacity limit — oldest entry is dropped when exceeded |
+| `ttlMs` | Time-to-live in milliseconds (300 000 = 5 minutes) |
+| `enabled` | `false` if the `CACHE_ENABLED=false` env var is set |
+
+**Usage from Claude Code:**
+
+```
+Read the resource search://cache/stats
+```
+
+Claude Code will issue a `resources/read` call and show you the current cache state. Useful for checking whether a query is likely cached before making a real API call, or for debugging unexpected misses.
+
+**Usage via MCP Inspector:**
+
+```bash
+cd gemini-web-mcp/server
+npx @modelcontextprotocol/inspector node server.mjs
+```
+
+Open the inspector UI and go to the **Resources** tab. You will see `Cache Statistics` listed. Clicking it fetches the live JSON.
+
+---
 
 ## Environment Variables
 

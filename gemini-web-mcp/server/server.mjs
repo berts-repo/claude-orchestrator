@@ -87,7 +87,7 @@ try {
 
 const server = new McpServer(
   { name: "gemini-web-search", version: "0.1.0" },
-  { capabilities: { tools: {} } },
+  { capabilities: { tools: {}, resources: {} } },
 );
 
 server.registerTool(
@@ -204,6 +204,32 @@ server.registerTool(
       };
     }
   },
+);
+
+// --- Resources ---
+
+server.registerResource(
+  "cache-stats",
+  "search://cache/stats",
+  {
+    title: "Cache Statistics",
+    description: "Live stats for the in-memory search result cache",
+    mimeType: "application/json",
+  },
+  async (_uri) => ({
+    contents: [
+      {
+        uri: "search://cache/stats",
+        mimeType: "application/json",
+        text: JSON.stringify({
+          entries: cache.size(),
+          maxEntries: 100,
+          ttlMs: 300_000,
+          enabled: process.env.CACHE_ENABLED !== "false",
+        }),
+      },
+    ],
+  }),
 );
 
 // --- Start ---
