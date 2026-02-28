@@ -6,7 +6,7 @@
 # Keeps the last MAX_ENTRIES summary entries (FIFO rotation)
 # Detail files expire after RETENTION_DAYS
 # HOOK_EVENT: PostToolUse
-# HOOK_MATCHER: mcp__codex__codex|mcp__codex__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
 # HOOK_TIMEOUT: 10
 set -euo pipefail
 
@@ -29,7 +29,7 @@ tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
 # Only log Codex and Gemini calls
 case "$tool_name" in
-  mcp__codex__codex|mcp__codex__codex-reply) tool_type="codex" ;;
+  mcp__delegate__codex|mcp__delegate__codex-reply) tool_type="codex" ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) tool_type="gemini" ;;
   *) exit 0 ;;
 esac
