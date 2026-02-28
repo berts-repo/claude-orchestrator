@@ -152,7 +152,7 @@ server.registerTool(
     log.info("web_search called", { query: cleanQuery.slice(0, 100), max_results, provider: provider.getName() });
 
     try {
-      const { summary, sources } = await provider.search(cleanQuery, max_results);
+      const { summary, sources, notice } = await provider.search(cleanQuery, max_results);
 
       const cleanSummary = sanitizeResponse(summary);
       const sourcesBlock = sources.length > 0
@@ -160,6 +160,7 @@ server.registerTool(
         : "";
 
       const output = [
+        ...(notice ? [notice, ""] : []),
         "--- BEGIN UNTRUSTED WEB CONTENT ---",
         "",
         cleanSummary,
