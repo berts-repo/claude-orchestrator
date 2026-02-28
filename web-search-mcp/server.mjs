@@ -90,7 +90,7 @@ try {
 // --- MCP Server ---
 
 const server = new McpServer(
-  { name: "web-search-mcp", version: "0.1.0" },
+  { name: "delegate-web", version: "0.1.0" },
   { capabilities: { tools: {}, resources: {} } },
 );
 
