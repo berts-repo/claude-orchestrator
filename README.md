@@ -52,7 +52,7 @@ Claude Code spawns each MCP server as a child process and communicates over stdi
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[gemini-web-mcp/](gemini-web-mcp/)** |
+| Location | **[web-search-mcp/](web-search-mcp/)** |
 
 Internet access is triggered by explicit user intent:
 
@@ -63,7 +63,7 @@ Internet access is triggered by explicit user intent:
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
-See **[gemini-web-mcp/README.md](gemini-web-mcp/README.md)** for architecture, security model, and setup.
+See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, security model, and setup.
 
 ### Codex CLI (Experimental)
 
@@ -229,18 +229,18 @@ cp CLAUDE.example.md ~/.claude/CLAUDE.md
 # Option B: Project-scoped — applies only when working in this repo
 cp CLAUDE.example.md CLAUDE.md
 
-# 3. Install Gemini MCP server dependencies
-cd gemini-web-mcp/server
+# 3. Install web search MCP server dependencies
+cd web-search-mcp
 npm install
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
-cp gemini-web-mcp/server/.env.example gemini-web-mcp/server/.env
-chmod 600 gemini-web-mcp/server/.env
+cp web-search-mcp/.env.example web-search-mcp/.env
+chmod 600 web-search-mcp/.env
 # Edit .env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers
-claude mcp add -s user gemini-web -- ~/git/claude-orchestrator/gemini-web-mcp/server/start.sh
+claude mcp add -s user web-search-mcp -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
@@ -250,7 +250,7 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # gemini-web should show "Connected"
+claude mcp list                # web-search-mcp should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/          # slash commands should be present
 
@@ -260,7 +260,7 @@ claude "search the web for MCP protocol specification"
 
 ## Setup Details
 
-- **Gemini Web Search:** See **[gemini-web-mcp/README.md](gemini-web-mcp/README.md)** for architecture, setup, and security model.
+- **Web Search MCP:** See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, setup, and security model.
 - **Codex Sandbox:** See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration.
 - **Codex Delegations:** See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for delegation patterns.
 - **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
