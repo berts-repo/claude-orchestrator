@@ -1,10 +1,8 @@
 # TODO
 
-## Priority: Debug
-
-- **BUG: `security--guard-sensitive-reads.sh` hook fires but doesn't block Read/Glob tools.** Hook receives correct payload (`tool_name: "Read"`, `file_path: "/home/me/.ssh/config"`) but Claude Code proceeds with the read anyway. Bash matcher works (destructive commands blocked), but Read/Glob matchers don't prevent tool execution. Debug logging added — check `/tmp/hook-debug.log` after testing. Possible causes: hook output format incorrect, Claude Code ignores deny for Read/Glob, or pattern matching fails silently.
-
 ## Backlog
+
+- **Fix `set -e` arithmetic bug in macOS sandbox test script.** `((PASS++))`, `((FAIL++))`, `((SKIP++))` return exit code 1 when the variable is 0, causing the script to abort early under `set -e`. Replace with `PASS=$((PASS+1))` etc. File: `codex-sandbox-mcp/platforms/macos/test-sandbox.sh:72`. Test first: run the script and confirm early exit, then apply the fix.
 
 - Add uninstall workflow/docs for cleanly removing this orchestrator.
 - Add token usage instrumentation to validate savings claims from Codex delegation.

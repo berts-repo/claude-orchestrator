@@ -7,11 +7,7 @@
 # HOOK_TIMEOUT: 5
 set -euo pipefail
 
-# DEBUG: Log full payload
 payload="$(cat)"
-exec 2>>/tmp/hook-debug.log  # redirect stderr to log
-echo "[$(date -Iseconds)] === HOOK START ===" >> /tmp/hook-debug.log
-echo "payload: $payload" >> /tmp/hook-debug.log
 
 deny_on_parse_error() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Hook failed to parse tool input \xe2\x80\x94 denying to fail secure."}}\n'
@@ -34,8 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 deny() {
   local reason="$1"
   "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_pattern:-}${raw_command:-}" "medium" &>/dev/null || true
-  local output
-  output=$(cat <<EOF
+  printf '%s\n' "$(cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -44,9 +39,7 @@ deny() {
   }
 }
 EOF
-)
-  echo "DEBUG: deny() outputting: $output" >> /tmp/hook-debug.log
-  printf '%s\n' "$output"
+)"
   exit 0
 }
 
@@ -67,7 +60,6 @@ if [[ "$tool_name" == "Read" || "$tool_name" == "Edit" || \
     target=$(realpath -e -- "$raw_path" 2>/dev/null) || target="$raw_path"
 
     # Also block if the original path is a symlink pointing to sensitive location
-    # (even if we're checking the resolved path, log the attempt)
     if [[ -L "$raw_path" ]]; then
       link_target=$(readlink -f -- "$raw_path" 2>/dev/null) || link_target=""
       # Check both the symlink path and its target
@@ -100,8 +92,6 @@ fi
 # Expand ~ to $HOME for matching
 expanded_home="$HOME"
 
-echo "DEBUG: tool_name=$tool_name target=$target expanded_home=$expanded_home" >> /tmp/hook-debug.log
-
 # Block sensitive paths (but allow ~/.config/ generally)
 sensitive_patterns=(
   "(${expanded_home}|~)/\.ssh"
@@ -118,12 +108,9 @@ sensitive_patterns=(
 )
 
 for pattern in "${sensitive_patterns[@]}"; do
-  echo "DEBUG: checking pattern '$pattern' against '$target'" >> /tmp/hook-debug.log
   if printf '%s\n' "$target" | grep -qE "$pattern"; then
-    echo "DEBUG: MATCH! Calling deny" >> /tmp/hook-debug.log
     deny "Blocked access to sensitive file matching pattern: $pattern"
   fi
 done
-echo "DEBUG: No patterns matched, allowing" >> /tmp/hook-debug.log
 
 exit 0
