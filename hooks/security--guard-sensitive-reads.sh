@@ -3,11 +3,15 @@
 # Blocks reads of sensitive files to prevent credential exfiltration.
 # Allows ~/.config/hypr/ for legitimate window manager config editing.
 # HOOK_EVENT: PreToolUse
-# HOOK_MATCHER: Read|Bash|Glob
+# HOOK_MATCHER: Read|Bash|Glob|Edit|Write
 # HOOK_TIMEOUT: 5
 set -euo pipefail
 
+# DEBUG: Log full payload
 payload="$(cat)"
+exec 2>>/tmp/hook-debug.log  # redirect stderr to log
+echo "[$(date -Iseconds)] === HOOK START ===" >> /tmp/hook-debug.log
+echo "payload: $payload" >> /tmp/hook-debug.log
 
 deny_on_parse_error() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Hook failed to parse tool input \xe2\x80\x94 denying to fail secure."}}\n'
@@ -16,8 +20,10 @@ deny_on_parse_error() {
 
 tool_name=$(echo "$payload" | jq -r '.tool_name // ""' 2>/dev/null) || deny_on_parse_error
 
-# Only check Read, Glob, and Bash tools
-if [[ "$tool_name" != "Read" && "$tool_name" != "Glob" && "$tool_name" != "Bash" ]]; then
+# Only check Read, Glob, Bash, Edit, and Write tools
+if [[ "$tool_name" != "Read" && "$tool_name" != "Glob" && \
+      "$tool_name" != "Bash" && "$tool_name" != "Edit" && \
+      "$tool_name" != "Write" ]]; then
   exit 0
 fi
 
@@ -28,7 +34,8 @@ SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 deny() {
   local reason="$1"
   "$SCRIPT_DIR/security--log-security-event.sh" "guard-sensitive-reads" "$tool_name" "$reason" "${raw_path:-}${raw_pattern:-}${raw_command:-}" "medium" &>/dev/null || true
-  cat <<EOF
+  local output
+  output=$(cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -37,12 +44,16 @@ deny() {
   }
 }
 EOF
+)
+  echo "DEBUG: deny() outputting: $output" >> /tmp/hook-debug.log
+  printf '%s\n' "$output"
   exit 0
 }
 
 # Extract the relevant input
-if [[ "$tool_name" == "Read" || "$tool_name" == "Glob" ]]; then
-  if [[ "$tool_name" == "Read" ]]; then
+if [[ "$tool_name" == "Read" || "$tool_name" == "Edit" || \
+      "$tool_name" == "Write" || "$tool_name" == "Glob" ]]; then
+  if [[ "$tool_name" == "Read" || "$tool_name" == "Edit" || "$tool_name" == "Write" ]]; then
     raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || deny_on_parse_error
   else
     raw_path=$(printf '%s' "$payload" | jq -r '.tool_input.path // ""' 2>/dev/null) || deny_on_parse_error
@@ -89,6 +100,8 @@ fi
 # Expand ~ to $HOME for matching
 expanded_home="$HOME"
 
+echo "DEBUG: tool_name=$tool_name target=$target expanded_home=$expanded_home" >> /tmp/hook-debug.log
+
 # Block sensitive paths (but allow ~/.config/ generally)
 sensitive_patterns=(
   "(${expanded_home}|~)/\.ssh"
@@ -105,9 +118,12 @@ sensitive_patterns=(
 )
 
 for pattern in "${sensitive_patterns[@]}"; do
+  echo "DEBUG: checking pattern '$pattern' against '$target'" >> /tmp/hook-debug.log
   if printf '%s\n' "$target" | grep -qE "$pattern"; then
-    deny "Blocked read of sensitive file matching pattern: $pattern"
+    echo "DEBUG: MATCH! Calling deny" >> /tmp/hook-debug.log
+    deny "Blocked access to sensitive file matching pattern: $pattern"
   fi
 done
+echo "DEBUG: No patterns matched, allowing" >> /tmp/hook-debug.log
 
 exit 0
