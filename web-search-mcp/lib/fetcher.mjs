@@ -1,3 +1,6 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+
 const USER_AGENT = "web-search-mcp/0.1 (MCP fetch tool)";
 
 function errorWithCode(message, code) {
@@ -19,8 +22,29 @@ function isPrivateIpv4(hostname) {
   return false;
 }
 
-function assertSafeUrl(urlObj) {
-  const hostname = urlObj.hostname.toLowerCase();
+function extractMappedIpv4(hostname) {
+  const match = hostname.match(/^::ffff:(.+)$/i);
+  if (!match) return null;
+  const tail = match[1];
+
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(tail)) {
+    return tail;
+  }
+
+  const parts = tail.split(":");
+  if (parts.length !== 2) return null;
+  const hextets = parts.map((part) => Number.parseInt(part, 16));
+  if (hextets.some((n) => Number.isNaN(n) || n < 0 || n > 0xffff)) return null;
+
+  const [a, b] = hextets;
+  const octets = [(a >> 8) & 0xff, a & 0xff, (b >> 8) & 0xff, b & 0xff];
+  return octets.join(".");
+}
+
+async function assertSafeUrl(urlObj) {
+  const hostname = urlObj.hostname.toLowerCase().replace(/\.+$/, "");
+  const ipv6Hostname = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  const mappedIpv4 = extractMappedIpv4(ipv6Hostname);
 
   if (hostname === "localhost") {
     throw errorWithCode("URL not allowed: localhost is blocked", "ERR_URL_NOT_ALLOWED");
@@ -31,8 +55,11 @@ function assertSafeUrl(urlObj) {
   if (hostname === "169.254.169.254") {
     throw errorWithCode("URL not allowed: metadata endpoint is blocked", "ERR_URL_NOT_ALLOWED");
   }
-  if (hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+  if (hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]" || ipv6Hostname === "::1") {
     throw errorWithCode("URL not allowed: loopback address is blocked", "ERR_URL_NOT_ALLOWED");
+  }
+  if (mappedIpv4 && isPrivateIpv4(mappedIpv4)) {
+    throw errorWithCode("URL not allowed: private/link-local IP is blocked", "ERR_URL_NOT_ALLOWED");
   }
   if (isPrivateIpv4(hostname)) {
     throw errorWithCode("URL not allowed: private/link-local IP is blocked", "ERR_URL_NOT_ALLOWED");
@@ -40,9 +67,32 @@ function assertSafeUrl(urlObj) {
   if (
     hostname.startsWith("[fc") ||
     hostname.startsWith("[fd") ||
-    hostname.startsWith("[fe80")
+    hostname.startsWith("[fe80") ||
+    ipv6Hostname.startsWith("fc") ||
+    ipv6Hostname.startsWith("fd") ||
+    ipv6Hostname.startsWith("fe80")
   ) {
     throw errorWithCode("URL not allowed: private/link-local IPv6 is blocked", "ERR_URL_NOT_ALLOWED");
+  }
+
+  if (isIP(ipv6Hostname) !== 0) return;
+
+  try {
+    const resolved = await lookup(hostname);
+    const resolvedAddress = resolved.address.toLowerCase();
+    const resolvedMappedIpv4 = extractMappedIpv4(resolvedAddress);
+    if (
+      isPrivateIpv4(resolvedAddress) ||
+      resolvedAddress === "::1" ||
+      resolvedAddress.startsWith("fc") ||
+      resolvedAddress.startsWith("fd") ||
+      resolvedAddress.startsWith("fe80") ||
+      (resolvedMappedIpv4 && isPrivateIpv4(resolvedMappedIpv4))
+    ) {
+      throw errorWithCode("URL not allowed: resolved to a private/loopback IP", "ERR_URL_NOT_ALLOWED");
+    }
+  } catch (err) {
+    if (err?.code === "ERR_URL_NOT_ALLOWED") throw err;
   }
 }
 
@@ -58,7 +108,7 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     throw errorWithCode("URL scheme not allowed", "ERR_URL_NOT_ALLOWED");
   }
 
-  assertSafeUrl(urlObj);
+  await assertSafeUrl(urlObj);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -68,17 +118,45 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
   }, timeoutMs);
 
   try {
-    const response = await fetch(urlObj, {
-      method: "GET",
-      redirect: "follow",
-      credentials: "omit",
-      signal: controller.signal,
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
-    });
+    let response;
+    let currentUrlObj = urlObj;
+    let redirectCount = 0;
+    while (true) {
+      response = await fetch(currentUrlObj, {
+        method: "GET",
+        redirect: "manual",
+        credentials: "omit",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+        },
+      });
 
-    const finalUrl = response.url || urlObj.href;
+      if (
+        (response.status === 301 ||
+          response.status === 302 ||
+          response.status === 303 ||
+          response.status === 307 ||
+          response.status === 308) &&
+        response.headers.get("location")
+      ) {
+        if (redirectCount >= 10) {
+          throw errorWithCode("Too many redirects", "ERR_TOO_MANY_REDIRECTS");
+        }
+        redirectCount += 1;
+        const nextUrlObj = new URL(response.headers.get("location"), currentUrlObj);
+        if (nextUrlObj.protocol !== "http:" && nextUrlObj.protocol !== "https:") {
+          throw errorWithCode("URL scheme not allowed", "ERR_URL_NOT_ALLOWED");
+        }
+        await assertSafeUrl(nextUrlObj);
+        currentUrlObj = nextUrlObj;
+        continue;
+      }
+
+      break;
+    }
+
+    const finalUrl = response.url || currentUrlObj.href;
     let finalUrlObj;
     try {
       finalUrlObj = new URL(finalUrl);
@@ -89,7 +167,7 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     if (finalUrlObj.protocol !== "http:" && finalUrlObj.protocol !== "https:") {
       throw errorWithCode("Final URL scheme not allowed", "ERR_URL_NOT_ALLOWED");
     }
-    assertSafeUrl(finalUrlObj);
+    await assertSafeUrl(finalUrlObj);
 
     const contentType = response.headers.get("content-type") || "";
     const lowerType = contentType.toLowerCase();
