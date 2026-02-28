@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Resolve node from PATH instead of hardcoding — works with any version manager
 NODE="$(command -v node)"
 if [ -z "$NODE" ]; then
-  echo "[gemini-web] Node.js not found in PATH" >&2
+  echo "[web-search-mcp] Node.js not found in PATH" >&2
   exit 1
 fi
 SERVER="$SCRIPT_DIR/server.mjs"
@@ -23,7 +23,7 @@ if [ -z "${GEMINI_API_KEY:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 fi
 
 if [ -z "${GEMINI_API_KEY:-}" ]; then
-  echo "[gemini-web] No API key found. Set GEMINI_API_KEY, store in keyring, or create .env" >&2
+  echo "[web-search-mcp] No API key found. Set GEMINI_API_KEY, store in keyring, or create .env" >&2
   exit 1
 fi
 

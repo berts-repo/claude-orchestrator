@@ -86,7 +86,7 @@ try {
 // --- MCP Server ---
 
 const server = new McpServer(
-  { name: "gemini-web-search", version: "0.1.0" },
+  { name: "web-search-mcp", version: "0.1.0" },
   { capabilities: { tools: {}, resources: {} } },
 );
 
