@@ -32,7 +32,7 @@ User Intent
 Claude Code (local orchestrator)
    - agents, hooks, workflows
    |
-   +---> Gemini MCP Server (stdio) --- Gemini API (web search)
+   +---> delegate-web MCP Server (stdio) --- Gemini API (web search + fetch)
    |
    +---> Codex MCP Server (stdio) ---- Sandboxed local execution (may use provider APIs)
 ```
@@ -43,16 +43,21 @@ Claude Code spawns each MCP server as a child process and communicates over stdi
 
 ## MCP Servers
 
-### Gemini Web Search
+### delegate-web (Web Search + Fetch)
 
 | | |
 |---|---|
-| Purpose | Web search via Google Search grounding |
+| Purpose | Web search via Google Search grounding; URL fetching and extraction |
 | Auth | Gemini API key (env var, keyring, or `.env`) |
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
 | Location | **[web-search-mcp/](web-search-mcp/)** |
+
+Tools exposed:
+
+* `web_search` — queries Gemini with Google Search grounding, returns a summary and source URLs
+* `web_fetch` — fetches a URL, extracts readable content via Readability, returns Markdown or plain text
 
 Internet access is triggered by explicit user intent:
 
@@ -104,8 +109,8 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
 | `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
 | `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__gemini_web__*) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__gemini_web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate-web__*) | Records start time for duration tracking |
+| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate-web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
@@ -240,7 +245,7 @@ chmod 600 web-search-mcp/.env
 # Edit .env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers
-claude mcp add -s user web-search-mcp -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
@@ -250,7 +255,7 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # web-search-mcp should show "Connected"
+claude mcp list                # delegate-web should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/          # slash commands should be present
 
@@ -279,9 +284,8 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 {
   "permissions": {
     "allow": [
-      "mcp__gemini_web__web_search",
-      "mcp__gemini_web__web_fetch",
-      "mcp__gemini_web__web_summarize",
+      "mcp__delegate-web__web_search",
+      "mcp__delegate-web__web_fetch",
       "mcp__delegate__codex",
       "mcp__delegate__codex-reply"
     ],

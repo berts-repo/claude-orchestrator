@@ -1,15 +1,17 @@
 # Web Search MCP Server
 
-MCP server exposing a `web_search` tool backed by a pluggable provider system. Default provider: Gemini API with Google Search grounding.
+MCP server (registered as `delegate-web`) exposing `web_search` and `web_fetch` tools. Default search provider: Gemini API with Google Search grounding.
 
 ## Overview
 
 This server provides Claude Code with internet access through a controlled, auditable channel. When users explicitly request web searches ("search the web for...", "do research on..."), Claude calls this MCP tool instead of using curl/wget directly.
 
 Key features:
+- **Two tools** — `web_search` (Gemini-grounded search) and `web_fetch` (URL fetch + Readability extraction)
 - **Pluggable providers** — swap search backends via `SEARCH_PROVIDER` env var (default: `gemini`)
 - **Google Search grounding** — Gemini performs actual Google searches and grounds responses in results
-- **Source attribution** — Every response includes source URLs for citation
+- **Source attribution** — Every search response includes source URLs for citation
+- **SSRF protection** — `web_fetch` blocks localhost, private IPs, link-local, and metadata endpoints
 - **Input/output sanitization** — Blocks injection patterns, strips HTML/scripts from results
 - **Rate limiting** — 30 requests/minute with in-memory caching (5-min TTL)
 - **Untrust markers** — All web content is wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
@@ -87,7 +89,7 @@ MCP tool interface               │  Any content after "BEGIN UNTRUSTED"
 ```
 web-search-mcp/
 ├── README.md                    # This file
-├── server.mjs                   # Main server — registers web_search tool
+├── server.mjs                   # Main server — registers web_search and web_fetch tools
 ├── start.sh                     # Launcher — resolves API key, starts node
 ├── test-search.mjs              # Standalone test (bypasses MCP transport)
 ├── package.json                 # Dependencies
@@ -96,11 +98,13 @@ web-search-mcp/
 ├── .env                         # API key (gitignored, create locally)
 ├── lib/
 │   ├── cache.mjs                # In-memory LRU cache with TTL
+│   ├── fetcher.mjs              # SSRF-safe HTTP fetcher for web_fetch
 │   └── logger.mjs               # Structured JSON logger (stderr only)
 └── providers/
     ├── index.mjs                # Provider factory
     ├── base-provider.mjs        # Abstract base class
-    └── gemini-provider.mjs      # Gemini + Google Search implementation
+    ├── gemini-provider.mjs      # Gemini + Google Search implementation
+    └── brave-provider.mjs       # Brave Search API implementation
 ../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
     ├── gemini--inject-web-search-hint.sh
     ├── codex--enforce-code-write.sh
@@ -209,7 +213,7 @@ If you see `PASS`, the Gemini integration works. If it fails, check your API key
 **Option A: CLI (recommended)**
 
 ```bash
-claude mcp add -s user web-search-mcp -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 ```
 
 **Option B: Manual config**
@@ -219,7 +223,7 @@ Add to `~/.claude.json`:
 ```json
 {
   "mcpServers": {
-    "web-search-mcp": {
+    "delegate-web": {
       "command": "/home/YOUR_USER/git/claude-orchestrator/web-search-mcp/start.sh"
     }
   }
@@ -232,7 +236,7 @@ Verify registration:
 
 ```bash
 claude mcp list
-# web-search-mcp: ... - ✓ Connected
+# delegate-web: ... - ✓ Connected
 ```
 
 ### Step 6 — Install Hooks
@@ -276,7 +280,7 @@ What should happen:
 
 The server uses the Model Context Protocol over **stdio** (standard input/output). There are no ports or HTTP — Claude Code launches the server as a child process and communicates via JSON-RPC messages over stdin/stdout.
 
-The server registers one tool (`web_search`) and one resource (`search://cache/stats`), both described below.
+The server registers two tools (`web_search`, `web_fetch`) and two resources (`search://cache/stats`, `search://config`), described below.
 
 1. **Rate limits** — 30 requests per 60 seconds (in-memory counter)
 2. **Sanitizes the query** — strips control characters, HTML tags, collapses whitespace, caps at 500 characters
@@ -354,6 +358,35 @@ Sources:
 --- END UNTRUSTED WEB CONTENT ---
 ```
 
+### `web_fetch`
+
+Fetch a URL and return its main content as Markdown or plain text. Uses Mozilla Readability to extract the article body and strips navigation, ads, and boilerplate.
+
+**Parameters:**
+- `url` (string, required): The URL to fetch. Must be `http://` or `https://`. Private IPs, localhost, and metadata endpoints are blocked.
+- `format` (`"markdown"` | `"text"`, optional): Output format. Default `"markdown"`.
+
+**Returns:** Extracted page content wrapped in untrust markers, with the final URL noted (after redirects).
+
+**Example response:**
+```
+[Source: https://nodejs.org/en/about]
+--- BEGIN UNTRUSTED WEB CONTENT ---
+As an asynchronous event-driven JavaScript runtime, Node.js is designed to build
+scalable network applications...
+--- END UNTRUSTED WEB CONTENT ---
+```
+
+**SSRF protections in `lib/fetcher.mjs`:**
+- Blocks `localhost`, `127.0.0.1`, `::1`
+- Blocks private IPv4 ranges (10.x, 172.16–31.x, 192.168.x, 169.254.x)
+- Blocks `.local` / `.internal` domains
+- Blocks the AWS/GCP metadata endpoint (`169.254.169.254`)
+- Blocks private IPv6 ranges (`fc`, `fd`, `fe80`)
+- Validates redirect destinations with the same rules
+- Enforces 5 MB response size limit and 10-second timeout
+- Only accepts `text/html` and `text/plain` content types
+
 ## MCP Resources
 
 MCP has three kinds of things a server can expose:
@@ -410,9 +443,10 @@ Open the inspector UI and go to the **Resources** tab. You will see `Cache Stati
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GEMINI_API_KEY` | (required) | Google Gemini API key |
+| `GEMINI_API_KEY` | (required for gemini) | Google Gemini API key |
+| `BRAVE_API_KEY` | (required for brave) | Brave Search API key |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
-| `SEARCH_PROVIDER` | `gemini` | Provider to use (`gemini`, or any registered provider name) |
+| `SEARCH_PROVIDER` | `gemini` | Provider to use (`gemini` or `brave`) |
 | `LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
 | `CACHE_ENABLED` | `true` | Set to `false` to disable caching |
 
@@ -448,7 +482,7 @@ Common causes:
 
 ### Claude doesn't use web_search
 
-1. Check MCP registration: `claude mcp list` — `web-search-mcp` should appear
+1. Check MCP registration: `claude mcp list` — `delegate-web` should appear
 2. Re-run hook sync from repo root: `bash scripts/sync-hooks.sh`
 3. Make sure your prompt contains a trigger phrase like "search the web"
 4. Confirm hooks are present: `ls -la ~/.claude/hooks/`
