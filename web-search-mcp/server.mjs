@@ -65,6 +65,11 @@ function sanitizeQuery(raw) {
  */
 function sanitizeResponse(text) {
   let t = text;
+  t = t.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
+  t = t.replace(/\x1b/g, "");
+  t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  t = t.replace(/[\x80-\x9f]/g, "");
+  t = t.replace(/[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2069\u206a-\u206f\ufeff]/g, "");
   t = t.replace(/<script[\s\S]*?<\/script>/gi, "");
   t = t.replace(/<[^>]*>/g, "");
   t = t.replace(
