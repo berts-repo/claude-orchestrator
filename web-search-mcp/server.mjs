@@ -236,4 +236,4 @@ server.registerResource(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-log.info("gemini-web-search server started", { provider: provider.getName() });
+log.info("web-search-mcp server started", { provider: provider.getName() });
