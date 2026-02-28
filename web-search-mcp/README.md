@@ -65,7 +65,7 @@ Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protec
 |---------|-------|---------|
 | Query sanitization | Server | Strips control chars, HTML, collapses whitespace |
 | Injection detection | Server | Regex blocks "ignore instructions", "sudo", etc. |
-| Output sanitization | Server | Strips `<script>`, HTML tags, fake system prompts |
+| Output sanitization | Server | Strips `<script>`, HTML tags, fake system prompts, ANSI escapes, C0/C1 control chars, Unicode bidi overrides |
 | Untrust markers | Server | Wraps all web content with clear markers |
 | Rate limiting | Server | 30 req/min prevents abuse |
 | `security--restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
@@ -92,6 +92,7 @@ web-search-mcp/
 ├── server.mjs                   # Main server — registers web_search and web_fetch tools
 ├── start.sh                     # Launcher — resolves API key, starts node
 ├── test-search.mjs              # Standalone test (bypasses MCP transport)
+├── test-security.mjs            # Unit tests for SSRF and sanitization fixes
 ├── package.json                 # Dependencies
 ├── package-lock.json            # Lockfile
 ├── .gitignore                   # Ignores .env, node_modules, logs
@@ -378,12 +379,14 @@ scalable network applications...
 ```
 
 **SSRF protections in `lib/fetcher.mjs`:**
-- Blocks `localhost`, `127.0.0.1`, `::1`
+- Blocks `localhost` (including trailing-dot form `localhost.`), `127.0.0.1`, `::1`
 - Blocks private IPv4 ranges (10.x, 172.16–31.x, 192.168.x, 169.254.x)
+- Blocks IPv4-mapped IPv6 addresses in both dotted (`::ffff:127.0.0.1`) and hex (`::ffff:7f00:1`) forms
 - Blocks `.local` / `.internal` domains
 - Blocks the AWS/GCP metadata endpoint (`169.254.169.254`)
-- Blocks private IPv6 ranges (`fc`, `fd`, `fe80`)
-- Validates redirect destinations with the same rules
+- Blocks private IPv6 ranges (`fc00::/7` ULA, `fe80::/10` link-local)
+- Pre-resolves hostnames via `dns.promises.lookup()` and rejects results that resolve to private/loopback IPs
+- Follows redirects manually (`redirect: "manual"`) — validates each `Location` hop before following; caps at 10 redirects
 - Enforces 5 MB response size limit and 10-second timeout
 - Only accepts `text/html` and `text/plain` content types
 
