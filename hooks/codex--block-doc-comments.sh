@@ -29,7 +29,7 @@ if [[ "$subagent" == "doc_comments" || "$subagent" == "doc-comments" ]]; then
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "doc_comments subagent is blocked. Use mcp__codex__codex with sandbox: workspace-write instead."
+    "permissionDecisionReason": "doc_comments subagent is blocked. Use mcp__delegate__codex with sandbox: workspace-write instead."
   }
 }
 EOF

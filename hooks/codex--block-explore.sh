@@ -29,7 +29,7 @@ if [[ "$subagent" == "explore" ]]; then
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "Explore subagent is blocked. Use mcp__codex__codex with sandbox: read-only instead."
+    "permissionDecisionReason": "Explore subagent is blocked. Use mcp__delegate__codex with sandbox: read-only instead."
   }
 }
 EOF

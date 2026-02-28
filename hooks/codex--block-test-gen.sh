@@ -29,7 +29,7 @@ if [[ "$subagent" == "test_gen" || "$subagent" == "test-gen" ]]; then
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "test_gen subagent is blocked. Use mcp__codex__codex with sandbox: workspace-write instead."
+    "permissionDecisionReason": "test_gen subagent is blocked. Use mcp__delegate__codex with sandbox: workspace-write instead."
   }
 }
 EOF
