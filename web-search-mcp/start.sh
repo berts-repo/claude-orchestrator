@@ -13,7 +13,7 @@ SERVER="$SCRIPT_DIR/server.mjs"
 # Source API key: try GNOME keyring first, fall back to .env file
 if [ -z "${GEMINI_API_KEY:-}" ]; then
   if command -v secret-tool &>/dev/null; then
-    GEMINI_API_KEY="$(secret-tool lookup service mcp-gemini-web account api-key 2>/dev/null || true)"
+    GEMINI_API_KEY="$(secret-tool lookup service mcp-delegate-web account api-key 2>/dev/null || true)"
   fi
 fi
 

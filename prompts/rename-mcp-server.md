@@ -59,4 +59,11 @@ File: `/home/me/git/claude-orchestrator/web-search-mcp/start.sh`
 - `~/.claude.json` and `~/.claude/settings.json` are outside the repo — commit only the in-repo files (`settings.local.json`, `start.sh`).
 - The two registered servers are currently `delegate` (Codex) and `delegate-web` (web search). Renaming either to the same name would conflict.
 - After renaming, restart Claude Code for the new name to take effect in the UI.
-- The keyring entry at `secret-tool lookup service mcp-gemini-web account api-key` is independent of the server name — only update it if you also re-store the key under a new service name.
+- The keyring service name in `start.sh` follows the pattern `mcp-<server-name>`. Update it alongside the server name. If a key was previously stored under the old service name, re-store it:
+  ```bash
+  # Read old value and store under new name
+  old_key=$(secret-tool lookup service mcp-OLD_NAME account api-key)
+  secret-tool store --label="mcp-NEW_NAME api-key" service mcp-NEW_NAME account api-key <<< "$old_key"
+  # Optionally remove the old entry
+  secret-tool clear service mcp-OLD_NAME account api-key
+  ```
