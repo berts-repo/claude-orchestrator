@@ -54,16 +54,24 @@ Log lines use `[OLD_NAME]` as a prefix. Replace all occurrences:
 
 File: `/home/me/git/claude-orchestrator/web-search-mcp/start.sh`
 
+### 5. `web-search-mcp/start.sh` — keyring service name
+
+The keyring lookup uses the pattern `mcp-<server-name>`. Replace the service name:
+
+```
+service mcp-OLD_NAME  →  service mcp-NEW_NAME
+```
+
+If a key was previously stored under the old service name, migrate it:
+
+```bash
+old_key=$(secret-tool lookup service mcp-OLD_NAME account api-key)
+secret-tool store --label="mcp-NEW_NAME api-key" service mcp-NEW_NAME account api-key <<< "$old_key"
+secret-tool clear service mcp-OLD_NAME account api-key
+```
+
 ## Notes
 
 - `~/.claude.json` and `~/.claude/settings.json` are outside the repo — commit only the in-repo files (`settings.local.json`, `start.sh`).
 - The two registered servers are currently `delegate` (Codex) and `delegate-web` (web search). Renaming either to the same name would conflict.
 - After renaming, restart Claude Code for the new name to take effect in the UI.
-- The keyring service name in `start.sh` follows the pattern `mcp-<server-name>`. Update it alongside the server name. If a key was previously stored under the old service name, re-store it:
-  ```bash
-  # Read old value and store under new name
-  old_key=$(secret-tool lookup service mcp-OLD_NAME account api-key)
-  secret-tool store --label="mcp-NEW_NAME api-key" service mcp-NEW_NAME account api-key <<< "$old_key"
-  # Optionally remove the old entry
-  secret-tool clear service mcp-OLD_NAME account api-key
-  ```
