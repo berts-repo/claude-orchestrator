@@ -17,7 +17,7 @@ if [ -z "${GEMINI_API_KEY:-}" ]; then
   fi
 fi
 
-if [ -z "${GEMINI_API_KEY:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+if [ -f "$SCRIPT_DIR/.env" ]; then
   while IFS='=' read -r key value; do
     # Skip comments and blank lines
     [[ "$key" =~ ^[[:space:]]*# ]] && continue
