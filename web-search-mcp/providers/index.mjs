@@ -1,7 +1,9 @@
 import { GeminiProvider } from "./gemini-provider.mjs";
+import { BraveProvider } from "./brave-provider.mjs";
 
 const providers = {
   gemini: () => new GeminiProvider(),
+  brave: () => new BraveProvider(),
 };
 
 export function getProvider(name = "gemini") {

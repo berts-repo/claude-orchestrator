@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Readability } from "@mozilla/readability";
+import { parseHTML } from "linkedom";
+import TurndownService from "turndown";
 import { z } from "zod";
-import { getProvider } from "./providers/index.mjs";
+import { fetchUrl } from "./lib/fetcher.mjs";
 import * as log from "./lib/logger.mjs";
 import * as cache from "./lib/cache.mjs";
+import { getProvider, listProviders } from "./providers/index.mjs";
 
 // --- Config ---
 
@@ -94,7 +98,7 @@ server.registerTool(
   "web_search",
   {
     description:
-      "Search the web using Gemini with Google Search grounding. Returns a summary and source URLs. Use only when the user explicitly requests web/internet information.",
+      "Search the web and return a summary with source URLs. Use only when the user explicitly requests web/internet information.",
     inputSchema: {
       query: z
         .string()
@@ -106,6 +110,7 @@ server.registerTool(
         .min(1)
         .max(10)
         .default(5),
+      provider: z.enum(["gemini", "brave"]).optional(),
     },
   },
   /**
@@ -115,7 +120,7 @@ server.registerTool(
    * @param {number} input.max_results - The maximum number of sources to request from the provider.
    * @returns {Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>} Returns a tool result payload containing response text and optional error status.
    */
-  async ({ query, max_results }) => {
+  async ({ query, max_results, provider: requestedProvider }) => {
     // Rate limit
     if (!rateLimiter.check()) {
       log.warn("Rate limit exceeded");
@@ -142,17 +147,30 @@ server.registerTool(
       };
     }
 
+    let activeProvider = provider;
+    if (requestedProvider) {
+      try {
+        activeProvider = getProvider(requestedProvider);
+      } catch (err) {
+        return {
+          content: [{ type: "text", text: `[web_search error: ${err.message.slice(0, 200)}]` }],
+          isError: true,
+        };
+      }
+    }
+
     // Check cache
-    const cached = cache.get(cleanQuery);
+    const cacheKey = `${activeProvider.getName()}:${cleanQuery}`;
+    const cached = cache.get(cacheKey);
     if (cached) {
       log.debug("Cache hit", { query: cleanQuery.slice(0, 60) });
       return cached;
     }
 
-    log.info("web_search called", { query: cleanQuery.slice(0, 100), max_results, provider: provider.getName() });
+    log.info("web_search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
 
     try {
-      const { summary, sources, notice } = await provider.search(cleanQuery, max_results);
+      const { summary, sources, notice } = await activeProvider.search(cleanQuery, max_results);
 
       const cleanSummary = sanitizeResponse(summary);
       const sourcesBlock = sources.length > 0
@@ -161,6 +179,7 @@ server.registerTool(
 
       const output = [
         ...(notice ? [notice, ""] : []),
+        `[Provider: ${activeProvider.getName()}]`,
         "--- BEGIN UNTRUSTED WEB CONTENT ---",
         "",
         cleanSummary,
@@ -178,7 +197,7 @@ server.registerTool(
       const result = { content: [{ type: "text", text: output }] };
 
       // Cache successful results
-      cache.set(cleanQuery, result);
+      cache.set(cacheKey, result);
 
       return result;
     } catch (err) {
@@ -189,17 +208,94 @@ server.registerTool(
       if (message.includes("API_KEY")) {
         userMessage = "[web_search error: authentication failed]";
       } else if (message.includes("429") || message.includes("quota") || message.includes("rate")) {
-        userMessage = "[web_search error: Gemini rate limit, try again later]";
+        userMessage = "[web_search error: rate limit exceeded, try again later]";
       } else if (message.includes("timeout") || message.includes("aborted") || message.includes("DEADLINE")) {
         userMessage = "[web_search error: request timed out]";
       } else if (message.includes("SAFETY") || message.includes("blocked")) {
-        userMessage = "[web_search error: query blocked by Gemini safety filters]";
+        userMessage = "[web_search error: query blocked by safety filters]";
       } else {
         userMessage = `[web_search error: ${message.slice(0, 200)}]`;
       }
 
       return {
         content: [{ type: "text", text: userMessage }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "web_fetch",
+  {
+    description: "Fetch a URL and return its main content as Markdown. For reading web pages, docs, or articles. Returns untrusted external content.",
+    inputSchema: {
+      url: z.string().url(),
+      format: z.enum(["markdown", "text"]).default("markdown"),
+    },
+  },
+  async ({ url, format }) => {
+    if (!rateLimiter.check()) {
+      log.warn("Rate limit exceeded");
+      return {
+        content: [{ type: "text", text: "[web_fetch error: rate limit exceeded, try again later]" }],
+        isError: true,
+      };
+    }
+
+    try {
+      const { html, finalUrl } = await fetchUrl(url);
+      const { document } = parseHTML(html);
+      const article = new Readability(document).parse();
+      const htmlForConversion = article?.content || html;
+      let text;
+
+      if (format === "markdown") {
+        const turndown = new TurndownService();
+        text = turndown.turndown(htmlForConversion || "");
+      } else {
+        text = article?.textContent?.trim() ||
+          (htmlForConversion || "")
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]*>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+      }
+
+      const cleanText = sanitizeResponse(text || "");
+      const output = [
+        `[Source: ${finalUrl}]`,
+        "--- BEGIN UNTRUSTED WEB CONTENT ---",
+        "",
+        cleanText,
+        "",
+        "--- END UNTRUSTED WEB CONTENT ---",
+      ].join("\n");
+
+      return { content: [{ type: "text", text: output }] };
+    } catch (err) {
+      const message = err?.message || String(err);
+      if (err?.code === "ERR_URL_NOT_ALLOWED") {
+        return {
+          content: [{ type: "text", text: "[web_fetch error: URL not allowed]" }],
+          isError: true,
+        };
+      }
+      if (err?.code === "ERR_TIMEOUT" || message.includes("timed out") || message.includes("AbortError")) {
+        return {
+          content: [{ type: "text", text: "[web_fetch error: request timed out]" }],
+          isError: true,
+        };
+      }
+      if (err?.code === "ERR_UNSUPPORTED_CONTENT_TYPE") {
+        return {
+          content: [{ type: "text", text: "[web_fetch error: unsupported content type]" }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text", text: `[web_fetch error: ${message.slice(0, 200)}]` }],
         isError: true,
       };
     }
@@ -229,6 +325,27 @@ server.registerResource(
         }),
       },
     ],
+  }),
+);
+
+server.registerResource(
+  "search-config",
+  "search://config",
+  {
+    title: "Search Configuration",
+    description: "Active provider and available tools",
+    mimeType: "application/json",
+  },
+  async (_uri) => ({
+    contents: [{
+      uri: "search://config",
+      mimeType: "application/json",
+      text: JSON.stringify({
+        activeProvider: provider.getName(),
+        availableProviders: listProviders().map((p) => ({ name: p.name, available: p.available })),
+        tools: ["web_search", "web_fetch"],
+      }),
+    }],
   }),
 );
 
