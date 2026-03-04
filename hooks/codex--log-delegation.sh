@@ -6,7 +6,7 @@
 # Keeps the last MAX_ENTRIES summary entries (FIFO rotation)
 # Detail files expire after RETENTION_DAYS
 # HOOK_EVENT: PostToolUse
-# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex_parallel|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
 # HOOK_TIMEOUT: 10
 set -euo pipefail
 
@@ -29,7 +29,7 @@ tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
 # Only log Codex and Gemini calls
 case "$tool_name" in
-  mcp__delegate__codex|mcp__delegate__codex-reply) tool_type="codex" ;;
+  mcp__delegate__codex|mcp__delegate__codex_parallel) tool_type="codex" ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) tool_type="gemini" ;;
   *) exit 0 ;;
 esac
@@ -50,8 +50,9 @@ make_summary() {
   fi
 }
 
-# Compute duration_ms from pending marker (written by codex--log-delegation-start.sh)
-compute_duration() {
+# Compute duration_ms and set STARTED_AT from pending marker (written by codex--log-delegation-start.sh)
+STARTED_AT=""
+compute_start_and_duration() {
   local prompt_text="$1"
   local prompt_prefix="${prompt_text:0:100}"
   local prompt_hash
@@ -65,8 +66,10 @@ compute_duration() {
 
     local now_ms
     if [[ "$(uname)" == "Darwin" ]]; then
+      STARTED_AT=$(date -u -r "$(( start_ms / 1000 ))" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
       now_ms=$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo "0")
     else
+      STARTED_AT=$(date -u -d "@$(( start_ms / 1000 ))" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
       now_ms=$(date +%s%3N 2>/dev/null || echo "0")
     fi
 
@@ -93,20 +96,41 @@ if [[ "$tool_type" == "codex" ]]; then
     exit 0
   fi
 
-  sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
-  approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
-  cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
-  prompt=$(echo "$tool_input" | jq -r '.prompt // ""')
-  response_content=$(echo "$tool_response" | jq -r '.content // ""')
-
-  if [[ "$thread_id" != "unknown" && "$thread_id" != "null" && -n "$thread_id" ]]; then
-    success=true
+  # Extract prompt and detect parallel vs single call
+  if [[ "$tool_name" == "mcp__delegate__codex_parallel" ]]; then
+    prompt=$(echo "$tool_input" | jq -c '.tasks // []')
+    is_parallel=true
   else
-    success=false
+    prompt=$(echo "$tool_input" | jq -r '.prompt // ""')
+    is_parallel=false
   fi
 
-  summary=$(make_summary "$prompt")
-  duration_ms=$(compute_duration "$prompt")
+  duration_ms=$(compute_start_and_duration "$prompt")
+
+  if [[ "$is_parallel" == "true" ]]; then
+    task_count=$(echo "$prompt" | jq 'length')
+    first_task_prompt=$(echo "$prompt" | jq -r '.[0].prompt // ""')
+    summary=$(make_summary "[${task_count} tasks] ${first_task_prompt}")
+    sandbox=$(echo "$prompt" | jq -r '[.[].sandbox // "default"] | unique | join(",")')
+    approval_policy=$(echo "$prompt" | jq -r '[.[]."approval-policy" // "default"] | unique | join(",")')
+    cwd=$(echo "$prompt" | jq -r '.[0].cwd // "unknown"')
+    thread_id="parallel-$(date +%s)-$$"
+    response_content=$(echo "$tool_response" | jq -r 'if type == "array" then (map(.content // "") | join("\n")) elif type == "string" then . else tostring end' 2>/dev/null || echo "")
+    success=true
+  else
+    sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
+    approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
+    cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
+    response_content=$(echo "$tool_response" | jq -r '.content // ""')
+
+    if [[ "$thread_id" != "unknown" && "$thread_id" != "null" && -n "$thread_id" ]]; then
+      success=true
+    else
+      success=false
+    fi
+
+    summary=$(make_summary "$prompt")
+  fi
 
   # Determine turn number for this thread
   detail_file="${DETAIL_DIR}/${thread_id}.jsonl"
@@ -121,38 +145,73 @@ if [[ "$tool_type" == "codex" ]]; then
   [[ "$success" == "false" ]] && local_level="error"
 
   # Append full detail as a new turn (JSONL — one line per turn, never overwrites)
-  log_json "$local_level" "delegation" "codex_delegation" \
-    --argjson turn "$turn" \
-    --arg tool "$tool_name" \
-    --arg threadId "$thread_id" \
-    --arg sandbox "$sandbox" \
-    --arg approval_policy "$approval_policy" \
-    --arg cwd "$cwd" \
-    --arg prompt "$prompt" \
-    --arg response "$response_content" \
-    --argjson success "$success" \
-    --argjson duration_ms "$duration_ms" \
-    >> "$detail_file"
+  if [[ "$is_parallel" == "true" ]]; then
+    log_json "$local_level" "delegation" "codex_delegation" \
+      --argjson turn "$turn" \
+      --arg tool "$tool_name" \
+      --arg threadId "$thread_id" \
+      --argjson task_count "$task_count" \
+      --arg sandbox "$sandbox" \
+      --arg approval_policy "$approval_policy" \
+      --arg cwd "$cwd" \
+      --arg prompt "$prompt" \
+      --arg response "$response_content" \
+      --argjson success "$success" \
+      --argjson duration_ms "$duration_ms" \
+      --arg started_at "${STARTED_AT:-}" \
+      >> "$detail_file"
+  else
+    log_json "$local_level" "delegation" "codex_delegation" \
+      --argjson turn "$turn" \
+      --arg tool "$tool_name" \
+      --arg threadId "$thread_id" \
+      --arg sandbox "$sandbox" \
+      --arg approval_policy "$approval_policy" \
+      --arg cwd "$cwd" \
+      --arg prompt "$prompt" \
+      --arg response "$response_content" \
+      --argjson success "$success" \
+      --argjson duration_ms "$duration_ms" \
+      --arg started_at "${STARTED_AT:-}" \
+      >> "$detail_file"
+  fi
 
   # Summary entry for the index log (no prompt/response)
-  log_entry=$(log_json "$local_level" "delegation" "codex_delegation" \
-    --arg type "$tool_type" \
-    --arg tool "$tool_name" \
-    --arg threadId "$thread_id" \
-    --arg sandbox "$sandbox" \
-    --arg approval_policy "$approval_policy" \
-    --arg cwd "$cwd" \
-    --arg summary "$summary" \
-    --arg detail "$detail_file" \
-    --argjson success "$success" \
-    --argjson duration_ms "$duration_ms")
+  if [[ "$is_parallel" == "true" ]]; then
+    log_entry=$(log_json "$local_level" "delegation" "codex_delegation" \
+      --arg type "$tool_type" \
+      --arg tool "$tool_name" \
+      --arg threadId "$thread_id" \
+      --argjson task_count "$task_count" \
+      --arg sandbox "$sandbox" \
+      --arg approval_policy "$approval_policy" \
+      --arg cwd "$cwd" \
+      --arg summary "$summary" \
+      --arg detail "$detail_file" \
+      --argjson success "$success" \
+      --argjson duration_ms "$duration_ms" \
+      --arg started_at "${STARTED_AT:-}")
+  else
+    log_entry=$(log_json "$local_level" "delegation" "codex_delegation" \
+      --arg type "$tool_type" \
+      --arg tool "$tool_name" \
+      --arg threadId "$thread_id" \
+      --arg sandbox "$sandbox" \
+      --arg approval_policy "$approval_policy" \
+      --arg cwd "$cwd" \
+      --arg summary "$summary" \
+      --arg detail "$detail_file" \
+      --argjson success "$success" \
+      --argjson duration_ms "$duration_ms" \
+      --arg started_at "${STARTED_AT:-}")
+  fi
 
 elif [[ "$tool_type" == "gemini" ]]; then
   query=$(echo "$tool_input" | jq -r '.query // .url // .prompt // ""')
   response_content=$(echo "$tool_response" | jq -r 'if type == "string" then . else (tostring) end' 2>/dev/null || echo "$tool_response")
 
   summary=$(make_summary "$query")
-  duration_ms=$(compute_duration "$query")
+  duration_ms=$(compute_start_and_duration "$query")
 
   # Gemini has no threadId, generate a unique id
   detail_id="gemini-$(date +%s)-$$"
@@ -164,6 +223,7 @@ elif [[ "$tool_type" == "gemini" ]]; then
     --arg response "$response_content" \
     --argjson success true \
     --argjson duration_ms "$duration_ms" \
+    --arg started_at "${STARTED_AT:-}" \
     > "$detail_file"
 
   # Summary entry for the index log (no response)
@@ -173,7 +233,8 @@ elif [[ "$tool_type" == "gemini" ]]; then
     --arg summary "$summary" \
     --arg detail "$detail_file" \
     --argjson success true \
-    --argjson duration_ms "$duration_ms")
+    --argjson duration_ms "$duration_ms" \
+    --arg started_at "${STARTED_AT:-}")
 fi
 
 # Append new entry

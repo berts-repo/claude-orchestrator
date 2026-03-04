@@ -100,6 +100,7 @@ web-search-mcp/
 ├── lib/
 │   ├── cache.mjs                # In-memory LRU cache with TTL
 │   ├── fetcher.mjs              # SSRF-safe HTTP fetcher for web_fetch
+│   ├── sanitize.mjs             # Input/output sanitization and injection detection
 │   └── logger.mjs               # Structured JSON logger (stderr only)
 └── providers/
     ├── index.mjs                # Provider factory
@@ -169,10 +170,10 @@ Add to your `~/.zshrc` (or `~/.bashrc`) to persist.
 **Option B: macOS Keychain**
 
 ```bash
-security add-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w "your-key-here"
+security add-generic-password -a "mcp-delegate-web" -s "mcp-delegate-web" -w "your-key-here"
 ```
 
-> **Linux alternative:** Use GNOME Keyring with `secret-tool store --label="MCP Gemini Web" service mcp-gemini-web account api-key`.
+> **Linux alternative:** Use GNOME Keyring with `secret-tool store --label="MCP Gemini Web" service mcp-delegate-web account api-key`.
 
 **Option C: Local .env file (dev convenience)**
 
@@ -465,7 +466,7 @@ The launcher checks three sources in order. Make sure at least one is set:
 echo $GEMINI_API_KEY
 
 # Check macOS Keychain
-security find-generic-password -a "mcp-gemini-web" -s "mcp-gemini-web" -w
+security find-generic-password -a "mcp-delegate-web" -s "mcp-delegate-web" -w
 
 # Check .env file
 cat ~/git/claude-orchestrator/web-search-mcp/.env

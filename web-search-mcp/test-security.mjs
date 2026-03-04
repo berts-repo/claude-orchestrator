@@ -2,25 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { fetchUrl } from "./lib/fetcher.mjs";
-
-function sanitizeResponse(text) {
-  let t = text;
-  t = t.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
-  t = t.replace(/\x1b/g, "");
-  t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
-  t = t.replace(/[\x80-\x9f]/g, "");
-  t = t.replace(/[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2069\u206a-\u206f\ufeff]/g, "");
-  t = t.replace(/<script[\s\S]*?<\/script>/gi, "");
-  t = t.replace(/<[^>]*>/g, "");
-  t = t.replace(
-    /\b(IMPORTANT SYSTEM NOTE|INSTRUCTION FOR AGENT|EXECUTE COMMAND)[:\s].{0,200}/gi,
-    "[content removed]",
-  );
-  if (t.length > 4000) {
-    t = t.slice(0, 4000) + "\n[truncated]";
-  }
-  return t;
-}
+import { sanitizeResponse } from "./lib/sanitize.mjs";
 
 async function assertRejectsCode(promiseFactory, code) {
   await assert.rejects(
@@ -86,11 +68,12 @@ test("fetchUrl rejects too many redirects with ERR_TOO_MANY_REDIRECTS", async ()
   let hop = 0;
   globalThis.fetch = async () => {
     hop += 1;
-    return redirectResponse(`https://example.com/hop-${hop}`);
+    // Use a literal public IP so assertSafeUrl skips DNS (isIP early-return)
+    return redirectResponse(`https://1.2.3.4/hop-${hop}`);
   };
 
   try {
-    await assertRejectsCode(() => fetchUrl("https://example.com/start"), "ERR_TOO_MANY_REDIRECTS");
+    await assertRejectsCode(() => fetchUrl("https://1.2.3.4/start"), "ERR_TOO_MANY_REDIRECTS");
   } finally {
     globalThis.fetch = originalFetch;
   }

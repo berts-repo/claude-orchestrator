@@ -33,10 +33,14 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   done < "$SCRIPT_DIR/.env"
 fi
 
-if [ -z "${GEMINI_API_KEY:-}" ]; then
+SEARCH_PROVIDER="${SEARCH_PROVIDER:-gemini}"
+
+if [ "$SEARCH_PROVIDER" = "gemini" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
   echo "[delegate-web] No API key found. Set GEMINI_API_KEY, store in keyring, or create .env" >&2
   exit 1
 fi
 
-export GEMINI_API_KEY
+if [ -n "${GEMINI_API_KEY:-}" ]; then
+  export GEMINI_API_KEY
+fi
 exec "$NODE" "$SERVER"

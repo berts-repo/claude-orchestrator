@@ -8,6 +8,7 @@ import { z } from "zod";
 import { fetchUrl } from "./lib/fetcher.mjs";
 import * as log from "./lib/logger.mjs";
 import * as cache from "./lib/cache.mjs";
+import { INJECTION_PATTERNS, sanitizeQuery, sanitizeResponse } from "./lib/sanitize.mjs";
 import { getProvider, listProviders } from "./providers/index.mjs";
 
 // --- Config ---
@@ -37,49 +38,19 @@ const rateLimiter = {
   },
 };
 
-// --- Sanitization ---
-
-const INJECTION_PATTERNS =
-  /\b(ignore previous|ignore above|disregard|you are now|new instructions|system prompt|execute|run command|sudo|bash -c)\b/i;
-
-/**
- * @description Sanitizes a raw user query by trimming whitespace, removing control characters and HTML tags, normalizing spacing, and enforcing max length.
- * @param {string} raw - The raw user-provided search query text.
- * @returns {string} Returns a cleaned query string suitable for provider search.
- */
-function sanitizeQuery(raw) {
-  let q = raw.trim();
-  q = q.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
-  q = q.replace(/\s+/g, " ");
-  q = q.replace(/<[^>]*>/g, "");
-  if (q.length > MAX_QUERY_LENGTH) {
-    q = q.slice(0, MAX_QUERY_LENGTH);
-  }
-  return q;
+function sanitizeSourceTitle(title) {
+  const cleanTitle = sanitizeResponse(String(title ?? ""), 200).replace(/\s+/g, " ").trim();
+  return cleanTitle || "Untitled";
 }
 
-/**
- * @description Sanitizes provider response text by removing scripts and HTML tags, filtering known instruction-like patterns, and truncating oversized output.
- * @param {string} text - The raw response text returned by the provider.
- * @returns {string} Returns sanitized response text safe to wrap in untrusted content markers.
- */
-function sanitizeResponse(text) {
-  let t = text;
-  t = t.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
-  t = t.replace(/\x1b/g, "");
-  t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
-  t = t.replace(/[\x80-\x9f]/g, "");
-  t = t.replace(/[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2069\u206a-\u206f\ufeff]/g, "");
-  t = t.replace(/<script[\s\S]*?<\/script>/gi, "");
-  t = t.replace(/<[^>]*>/g, "");
-  t = t.replace(
-    /\b(IMPORTANT SYSTEM NOTE|INSTRUCTION FOR AGENT|EXECUTE COMMAND)[:\s].{0,200}/gi,
-    "[content removed]",
-  );
-  if (t.length > MAX_RESPONSE_LENGTH) {
-    t = t.slice(0, MAX_RESPONSE_LENGTH) + "\n[truncated]";
+function sanitizeSourceUrl(url) {
+  try {
+    const parsed = new URL(String(url ?? "").trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.href;
+  } catch {
+    return null;
   }
-  return t;
 }
 
 // --- Initialize provider ---
@@ -136,7 +107,7 @@ server.registerTool(
     }
 
     // Sanitize input
-    const cleanQuery = sanitizeQuery(query);
+    const cleanQuery = sanitizeQuery(query, MAX_QUERY_LENGTH);
     if (!cleanQuery) {
       return {
         content: [{ type: "text", text: "[web_search error: query was empty after sanitization]" }],
@@ -165,7 +136,7 @@ server.registerTool(
     }
 
     // Check cache
-    const cacheKey = `${activeProvider.getName()}:${cleanQuery}`;
+    const cacheKey = `${activeProvider.getName()}:${cleanQuery}:${max_results}`;
     const cached = cache.get(cacheKey);
     if (cached) {
       log.debug("Cache hit", { query: cleanQuery.slice(0, 60) });
@@ -177,9 +148,15 @@ server.registerTool(
     try {
       const { summary, sources, notice } = await activeProvider.search(cleanQuery, max_results);
 
-      const cleanSummary = sanitizeResponse(summary);
-      const sourcesBlock = sources.length > 0
-        ? "\n\nSources:\n" + sources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join("\n")
+      const cleanSummary = sanitizeResponse(summary, MAX_RESPONSE_LENGTH);
+      const cleanSources = (Array.isArray(sources) ? sources : [])
+        .map((source) => ({
+          title: sanitizeSourceTitle(source?.title),
+          url: sanitizeSourceUrl(source?.url),
+        }))
+        .filter((source) => Boolean(source.url));
+      const sourcesBlock = cleanSources.length > 0
+        ? "\n\nSources:\n" + cleanSources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join("\n")
         : "";
 
       const output = [
@@ -196,7 +173,7 @@ server.registerTool(
       log.info("web_search completed", {
         query: cleanQuery.slice(0, 60),
         responseLength: cleanSummary.length,
-        sourceCount: sources.length,
+        sourceCount: cleanSources.length,
       });
 
       const result = { content: [{ type: "text", text: output }] };
@@ -268,7 +245,7 @@ server.registerTool(
             .trim();
       }
 
-      const cleanText = sanitizeResponse(text || "");
+      const cleanText = sanitizeResponse(text || "", MAX_RESPONSE_LENGTH);
       const output = [
         `[Source: ${finalUrl}]`,
         "--- BEGIN UNTRUSTED WEB CONTENT ---",
@@ -324,8 +301,8 @@ server.registerResource(
         mimeType: "application/json",
         text: JSON.stringify({
           entries: cache.size(),
-          maxEntries: 100,
-          ttlMs: 300_000,
+          maxEntries: cache.MAX_ENTRIES,
+          ttlMs: cache.TTL_MS,
           enabled: process.env.CACHE_ENABLED !== "false",
         }),
       },

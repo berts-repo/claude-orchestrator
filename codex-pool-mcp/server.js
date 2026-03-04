@@ -26,7 +26,10 @@ import { readFileSync } from "fs";
 import { homedir } from "os";
 import { z } from "zod";
 
-const DEFAULT_TIMEOUT_MS = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10); // 5 min
+const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
+const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
+const FORCE_KILL_DELAY_MS = 5000;
+const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
 // Resolve API key: env var first, then ~/.codex/auth.json (where Codex stores it)
 function resolveApiKey() {
@@ -42,13 +45,14 @@ function resolveApiKey() {
 // ── Schemas ────────────────────────────────────────────────────────────────
 
 const SandboxMode = z.enum(["read-only", "workspace-write", "danger-full-access"]);
-const ApprovalPolicy = z.enum(["never", "on-failure", "on-request", "untrusted"]);
+
+const ApprovalPolicy = z.enum(["untrusted", "on-failure", "on-request", "never"]);
 
 const TaskSchema = z.object({
   prompt: z.string().min(1).describe("The task prompt for Codex"),
   cwd: z.string().min(1).describe("Absolute path to the working directory to mount"),
   sandbox: SandboxMode.default("workspace-write"),
-  "approval-policy": ApprovalPolicy.default("on-failure"),
+  "approval-policy": ApprovalPolicy.optional().describe("When Codex must ask for approval"),
   model: z.string().optional().describe("Model override (e.g. 'o4-mini')"),
   "base-instructions": z.string().optional().describe("Override system instructions"),
 });
@@ -69,6 +73,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
       prompt,
       cwd,
       sandbox = "workspace-write",
+      "approval-policy": approvalPolicy,
       model,
       "base-instructions": baseInstructions,
     } = task;
@@ -76,10 +81,11 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
 
     const apiKey = resolveApiKey();
 
-    const codexBin = process.env.CODEX_BIN ?? "/usr/local/bin/codex";
+    const codexBin = process.env.CODEX_BIN ?? "codex";
     const codexArgs = [
       "exec", "--ephemeral",
       "-s", sandbox,
+      ...(approvalPolicy ? ["-c", `approval_policy=${approvalPolicy}`] : []),
       ...(model ? ["-m", model] : []),
       ...(baseInstructions ? ["-c", `instructions=${JSON.stringify(baseInstructions)}`] : []),
       prompt,
@@ -99,24 +105,67 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let outputCapped = false;
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
 
-    const timer = setTimeout(() => {
+    let forceKillTimer;
+    const terminateProcess = () => {
+      if (proc.exitCode === null) proc.kill("SIGTERM");
+      if (!forceKillTimer) {
+        forceKillTimer = setTimeout(() => {
+          if (proc.exitCode === null) proc.kill("SIGKILL");
+        }, FORCE_KILL_DELAY_MS);
+      }
+    };
+    const timeoutTimer = setTimeout(() => {
       timedOut = true;
-      proc.kill("SIGTERM");
+      terminateProcess();
     }, DEFAULT_TIMEOUT_MS);
 
-    proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
-    proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    proc.stdout.on("data", (chunk) => {
+      if (stdoutBytes < MAX_OUTPUT_BYTES) {
+        const remaining = MAX_OUTPUT_BYTES - stdoutBytes;
+        const take = Math.min(remaining, chunk.length);
+        stdout += chunk.subarray(0, take).toString();
+        stdoutBytes += take;
+      }
+      if (stdoutBytes >= MAX_OUTPUT_BYTES && !stdoutTruncated) {
+        stdout += "\n[stdout truncated: output limit reached]";
+        stdoutTruncated = true;
+        outputCapped = true;
+        terminateProcess();
+      }
+    });
+    proc.stderr.on("data", (chunk) => {
+      if (stderrBytes < MAX_OUTPUT_BYTES) {
+        const remaining = MAX_OUTPUT_BYTES - stderrBytes;
+        const take = Math.min(remaining, chunk.length);
+        stderr += chunk.subarray(0, take).toString();
+        stderrBytes += take;
+      }
+      if (stderrBytes >= MAX_OUTPUT_BYTES && !stderrTruncated) {
+        stderr += "\n[stderr truncated: output limit reached]";
+        stderrTruncated = true;
+        outputCapped = true;
+        terminateProcess();
+      }
+    });
 
     proc.on("close", (code) => {
-      clearTimeout(timer);
-      const success = !timedOut && code === 0;
+      clearTimeout(timeoutTimer);
+      clearTimeout(forceKillTimer);
+      const success = !timedOut && !outputCapped && code === 0;
       resolve({
         index,
         success,
         output: stdout.trim(),
         error: timedOut
           ? `Timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`
+          : outputCapped
+            ? `Output exceeded ${MAX_OUTPUT_BYTES} bytes and process was terminated`
           : stderr.trim() || undefined,
         exitCode: code ?? -1,
         startedAt,
@@ -126,7 +175,8 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
     });
 
     proc.on("error", (err) => {
-      clearTimeout(timer);
+      clearTimeout(timeoutTimer);
+      clearTimeout(forceKillTimer);
       resolve({
         index,
         success: false,
@@ -180,7 +230,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "codex",
       description:
-        "Run a single Codex task in an isolated Docker container. " +
+        "Run a single Codex task in an isolated local subprocess. " +
         "Equivalent to the previous mcp__delegate__codex interface.",
       inputSchema: {
         type: "object",
@@ -194,8 +244,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           "approval-policy": {
             type: "string",
-            enum: ["never", "on-failure", "on-request", "untrusted"],
+            enum: ["untrusted", "on-failure", "on-request", "never"],
             default: "on-failure",
+            description: "When Codex must ask for human approval before running a command",
           },
           model: { type: "string", description: "Model override (e.g. o4-mini)" },
           "base-instructions": { type: "string", description: "Override system instructions" },
@@ -206,7 +257,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "codex_parallel",
       description:
-        "Run multiple Codex tasks in parallel Docker containers. " +
+        "Run multiple Codex tasks in parallel local subprocesses. " +
         "All tasks start simultaneously; results are returned when all complete. " +
         "Use this for independent subtasks that would otherwise serialize.",
       inputSchema: {
@@ -228,7 +279,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 },
                 "approval-policy": {
                   type: "string",
-                  enum: ["never", "on-failure", "on-request", "untrusted"],
+                  enum: ["untrusted", "on-failure", "on-request", "never"],
                   default: "on-failure",
                 },
                 model: { type: "string" },

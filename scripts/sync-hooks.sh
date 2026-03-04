@@ -41,7 +41,9 @@ if ! command -v jq &>/dev/null; then
   die "jq is required but not found"
 fi
 
-mapfile -t hook_files < <(find "$HOOKS_REPO_DIR" -maxdepth 1 -type f -name '*.sh' | sort)
+hook_files=()
+while IFS= read -r _f; do hook_files+=("$_f"); done \
+  < <(find "$HOOKS_REPO_DIR" -maxdepth 1 -type f -name '*.sh' | sort)
 [[ ${#hook_files[@]} -gt 0 ]] || die "no hook scripts found in $HOOKS_REPO_DIR"
 
 echo "==> sync-hooks: frontmatter discovery"

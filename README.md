@@ -34,7 +34,7 @@ Claude Code (local orchestrator)
    |
    +---> delegate-web MCP Server (stdio) --- Gemini API (web search + fetch)
    |
-   +---> Codex MCP Server (stdio) ---- Sandboxed local execution (may use provider APIs)
+   +---> codex-pool MCP Server (stdio) -- codex exec subprocesses (sandboxed)
 ```
 
 Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
@@ -70,17 +70,25 @@ Returned data is retrieval-only: short summaries, source URLs, brief excerpts. R
 
 See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, security model, and setup.
 
-### Codex CLI (Experimental)
+### codex-pool (Codex Subprocess Dispatcher)
 
 | | |
 |---|---|
-| Purpose | Code generation and refactoring |
-| Auth | ChatGPT OAuth (no API key) |
+| Purpose | Code generation, review, refactoring via isolated subprocesses |
+| Auth | `OPENAI_API_KEY` env var or `~/.codex/auth.json` |
 | Transport | stdio |
 | Scope | Global (user) |
-| Status | Experimental |
+| Status | Stable |
+| Location | **[codex-pool-mcp/](codex-pool-mcp/)** |
 
-Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authentication uses ChatGPT OAuth via `codex login` — no API keys needed. Requires a plan with Codex CLI access (see [OpenAI docs](https://platform.openai.com/docs/guides/codex)).
+Tools exposed:
+
+* `codex` — spawns a single `codex exec --ephemeral` subprocess; backward-compatible with `mcp__delegate__codex`
+* `codex_parallel` — fans out up to 10 tasks simultaneously via `Promise.all`, bypassing MCP call serialization
+
+Each call is ephemeral — full task context must be provided per call. Sandboxing is handled by the Codex CLI's `--sandbox` flag.
+
+See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for architecture, parameters, and sandbox modes.
 
 ---
 
@@ -105,12 +113,9 @@ Codex CLI runs as an MCP server using the `mcp-server` subcommand. Authenticatio
 | `gemini--require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
 | `codex--inject-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks and injects Codex guidance |
 | `codex--enforce-code-write.sh` | PreToolUse (Write) | Blocks direct creation of substantial new code files (≥25 lines); requires Codex delegation |
-| `codex--block-explore.sh` | PreToolUse (Task) | Blocks Explore subagent — use Codex read-only instead |
-| `codex--block-test-gen.sh` | PreToolUse (Task) | Blocks test_gen subagent — Codex writes complete tests |
-| `codex--block-doc-comments.sh` | PreToolUse (Task) | Blocks doc_comments subagent — Codex writes to files |
-| `codex--block-diff-digest.sh` | PreToolUse (Task) | Blocks diff_digest subagent — keeps diffs external |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate-web__*) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate-web__*) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `codex--block-subagents.sh` | PreToolUse (Task) | Blocks Explore, test_gen, doc_comments, diff_digest subagents — use Codex instead |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Records start time for duration tracking |
+| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 ### Audit Logging
@@ -119,7 +124,7 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
 - Short identifying summary (first line of prompt, truncated to 80 chars)
-- Metadata: timestamp, level, session_id, tool, sandbox mode, threadId, success, duration_ms
+- Metadata: timestamp, level, session_id, tool, sandbox mode, call_id, success, duration_ms
 - `detail` field points to the full prompt/response file
 - FIFO rotation keeps the last 100 entries
 
@@ -128,7 +133,7 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 - Pending markers are cleaned up automatically on completion
 
 **Detail files** — `~/.claude/logs/details/`
-- Codex: `{threadId}.jsonl` — one line per turn, preserving multi-turn conversation chains
+- Codex: `codex-{epoch_ms}-{pid}.jsonl` — one entry per call
 - Gemini: `gemini-{epoch}-{pid}.jsonl` — one entry per call
 - Auto-deleted after 30 days (time-based retention)
 
@@ -181,7 +186,7 @@ Codex CLI runs inside OS-level sandboxes (Seatbelt on macOS, Bubblewrap on Linux
 | `workspace-write` | cwd only | No | Code edits, tests, refactors |
 | `danger-full-access` | Anywhere | Yes | Package installs, git push |
 
-See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration, custom profiles, and verification tests.
+See **[docs/README.md](docs/README.md)** for sandbox configuration, custom profiles, and verification tests.
 
 ## Codex Delegations
 
@@ -189,12 +194,12 @@ When Claude Code delegates tasks to Codex via MCP, significant token savings are
 
 | Delegation Type | Token Savings | Guide |
 |---|---|---|
-| Test Generation | [test-generation.md](codex-sandbox-mcp/delegations/test-generation.md) |
-| Code Review | [code-review.md](codex-sandbox-mcp/delegations/code-review.md) |
-| Refactoring | [refactoring.md](codex-sandbox-mcp/delegations/refactoring.md) |
-| Documentation | [documentation.md](codex-sandbox-mcp/delegations/documentation.md) |
+| Test Generation | ~97% | [test-generation.md](docs/delegations/test-generation.md) |
+| Code Review | ~90% | [code-review.md](docs/delegations/code-review.md) |
+| Refactoring | ~85% | [refactoring.md](docs/delegations/refactoring.md) |
+| Documentation | ~95% | [documentation.md](docs/delegations/documentation.md) |
 
-See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for MCP tool reference and delegation patterns.
+See **[docs/delegations/README.md](docs/delegations/README.md)** for MCP tool reference and delegation patterns.
 
 ---
 
@@ -230,13 +235,13 @@ cd ~/git/claude-orchestrator
 
 # 2. Install session instructions (pick one)
 # Option A: Global — applies to all projects
-cp CLAUDE.example.md ~/.claude/CLAUDE.md
+cp CLAUDE.global.md ~/.claude/CLAUDE.md
 # Option B: Project-scoped — applies only when working in this repo
-cp CLAUDE.example.md CLAUDE.md
+cp CLAUDE.global.md CLAUDE.md
 
-# 3. Install web search MCP server dependencies
-cd web-search-mcp
-npm install
+# 3. Install dependencies for both MCP servers
+cd web-search-mcp && npm install
+cd ../codex-pool-mcp && npm install
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
@@ -246,6 +251,7 @@ chmod 600 web-search-mcp/.env
 
 # 5. Register MCP servers
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
@@ -255,19 +261,19 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # delegate-web should show "Connected"
+claude mcp list                # delegate-web and delegate should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
-ls ~/.claude/commands/          # slash commands should be present
+ls ~/.claude/commands/         # slash commands should be present
 
-# 10. Test web search
+# 9. Test web search
 claude "search the web for MCP protocol specification"
 ```
 
 ## Setup Details
 
 - **Web Search MCP:** See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, setup, and security model.
-- **Codex Sandbox:** See **[codex-sandbox-mcp/README.md](codex-sandbox-mcp/README.md)** for sandbox configuration.
-- **Codex Delegations:** See **[codex-sandbox-mcp/delegations/README.md](codex-sandbox-mcp/delegations/README.md)** for delegation patterns.
+- **Codex Sandbox:** See **[docs/README.md](docs/README.md)** for sandbox configuration.
+- **Codex Delegations:** See **[docs/delegations/README.md](docs/delegations/README.md)** for delegation patterns.
 - **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
 
 ---
@@ -287,7 +293,7 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
       "mcp__delegate-web__web_search",
       "mcp__delegate-web__web_fetch",
       "mcp__delegate__codex",
-      "mcp__delegate__codex-reply"
+      "mcp__delegate__codex_parallel"
     ],
     "deny": [],
     "ask": []
@@ -327,7 +333,7 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 | `./CLAUDE.md` (project root) | This project only (shared via git) |
 | `./.claude/CLAUDE.md` | This project only (gitignored, personal) |
 
-This repo ships [`CLAUDE.example.md`](CLAUDE.example.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
+This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
-*Last updated: 2026-02-17*
+*Last updated: 2026-03-04*
