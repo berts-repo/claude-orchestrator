@@ -49,5 +49,6 @@ Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):
 When a hook blocks a command with language suggesting approval is possible (e.g., "without explicit user approval", "requires confirmation", "not permitted unless approved"):
 
 1. **Do NOT silently adapt** — never work around a blocked command without user input
-2. **Use AskUserQuestion** — question format: "Blocked command — run manually if needed:\n\n<commands>", with "Done" / "Skip" options
-3. **Command formatting** — never paste a long `&&`-chained command as one string. Split at each `&&` into separate numbered steps, each on its own line prefixed with the step number (e.g. `1. \`cmd\``), so line-wrap cannot corrupt the paste.
+2. **Do NOT retry** — if the user already approved and the hook still blocks, do not re-attempt the same command or try an alternative approach (e.g. Python shutil instead of rm -rf) to bypass it
+3. **Present for manual execution** — use AskUserQuestion with format: "Blocked command — run manually if needed:\n\n<commands>", with "Done" / "Skip" options, then continue with remaining work once the user responds
+4. **Command formatting** — never paste a long `&&`-chained command as one string. Split at each `&&` into separate numbered steps, each on its own line prefixed with the step number (e.g. `1. \`cmd\``), so line-wrap cannot corrupt the paste.

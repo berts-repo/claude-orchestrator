@@ -4,8 +4,8 @@
  */
 
 const ENABLED = process.env.CACHE_ENABLED !== "false";
-const MAX_ENTRIES = 100;
-const TTL_MS = 5 * 60 * 1000; // 5 minutes
+export const MAX_ENTRIES = 100;
+export const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const store = new Map();
 

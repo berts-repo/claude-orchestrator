@@ -1,4 +1,4 @@
-import { lookup } from "node:dns/promises";
+import { resolve4, resolve6 } from "node:dns/promises";
 import { isIP } from "node:net";
 
 const USER_AGENT = "web-search-mcp/0.1 (MCP fetch tool)";
@@ -77,9 +77,25 @@ async function assertSafeUrl(urlObj) {
 
   if (isIP(ipv6Hostname) !== 0) return;
 
-  try {
-    const resolved = await lookup(hostname);
-    const resolvedAddress = resolved.address.toLowerCase();
+  const [v4Result, v6Result] = await Promise.allSettled([
+    resolve4(hostname),
+    resolve6(hostname),
+  ]);
+
+  const resolvedAddresses = [];
+  if (v4Result.status === "fulfilled") {
+    resolvedAddresses.push(...v4Result.value);
+  }
+  if (v6Result.status === "fulfilled") {
+    resolvedAddresses.push(...v6Result.value);
+  }
+
+  if (resolvedAddresses.length === 0) {
+    throw errorWithCode("URL not allowed: DNS resolution failed", "ERR_URL_NOT_ALLOWED");
+  }
+
+  for (const resolvedAddressRaw of resolvedAddresses) {
+    const resolvedAddress = resolvedAddressRaw.toLowerCase();
     const resolvedMappedIpv4 = extractMappedIpv4(resolvedAddress);
     if (
       isPrivateIpv4(resolvedAddress) ||
@@ -91,8 +107,6 @@ async function assertSafeUrl(urlObj) {
     ) {
       throw errorWithCode("URL not allowed: resolved to a private/loopback IP", "ERR_URL_NOT_ALLOWED");
     }
-  } catch (err) {
-    if (err?.code === "ERR_URL_NOT_ALLOWED") throw err;
   }
 }
 

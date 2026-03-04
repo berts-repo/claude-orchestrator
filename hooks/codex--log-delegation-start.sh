@@ -3,7 +3,7 @@
 # Records delegation start time for duration tracking.
 # Companion to codex--log-delegation.sh (PostToolUse) which computes duration_ms.
 # HOOK_EVENT: PreToolUse
-# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex-reply|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex_parallel|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
 # HOOK_TIMEOUT: 5
 set -euo pipefail
 
@@ -16,7 +16,7 @@ tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
 
 # Only track Codex and Gemini calls
 case "$tool_name" in
-  mcp__delegate__codex|mcp__delegate__codex-reply) ;;
+  mcp__delegate__codex|mcp__delegate__codex_parallel) ;;
   mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) ;;
   *) exit 0 ;;
 esac
@@ -24,7 +24,11 @@ esac
 ensure_dirs
 
 # Hash first 100 chars of prompt/query as a correlation key
-prompt=$(echo "$payload" | jq -r '.tool_input.prompt // .tool_input.query // .tool_input.url // ""')
+if [[ "$tool_name" == "mcp__delegate__codex_parallel" ]]; then
+  prompt=$(echo "$payload" | jq -c '.tool_input.tasks // []')
+else
+  prompt=$(echo "$payload" | jq -r '.tool_input.prompt // .tool_input.query // .tool_input.url // ""')
+fi
 prompt_prefix="${prompt:0:100}"
 prompt_hash=$(printf '%s-%s' "$tool_name" "$prompt_prefix" | shasum -a 256 | cut -c1-16)
 

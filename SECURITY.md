@@ -75,7 +75,7 @@ Registered in `~/.claude.json`:
 | Server | Purpose |
 |--------|---------|
 | `codex` | Code execution in sandbox |
-| `gemini-web` | Web search via Gemini |
+| `delegate-web` | Web search via Gemini |
 
 ---
 
