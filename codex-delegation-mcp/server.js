@@ -72,6 +72,7 @@ const TaskSchema = z.object({
   "approval-policy": ApprovalPolicy.default("on-failure").describe("When Codex must ask for approval"),
   model: z.string().optional().describe("Model override (e.g. 'o4-mini')"),
   "base-instructions": z.string().optional().describe("Override system instructions"),
+  "skip-git-repo-check": z.boolean().optional().describe("Pass --skip-git-repo-check to codex exec"),
 });
 
 const ParallelSchema = z.object({
@@ -105,6 +106,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
       ...(approvalPolicy ? ["-c", `approval_policy=${approvalPolicy}`] : []),
       ...(model ? ["-m", model] : []),
       ...(baseInstructions ? ["-c", `instructions=${JSON.stringify(baseInstructions)}`] : []),
+      ...(task["skip-git-repo-check"] ? ["--skip-git-repo-check"] : []),
       prompt,
     ];
 
@@ -340,6 +342,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           model: { type: "string", description: "Model override (e.g. o4-mini)" },
           "base-instructions": { type: "string", description: "Override system instructions" },
+          "skip-git-repo-check": {
+            type: "boolean",
+            description: "Pass --skip-git-repo-check to codex exec; use when cwd is not a git repo",
+          },
         },
         required: ["prompt", "cwd"],
       },
@@ -374,6 +380,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 },
                 model: { type: "string" },
                 "base-instructions": { type: "string" },
+                "skip-git-repo-check": {
+                  type: "boolean",
+                  description: "Pass --skip-git-repo-check to codex exec; use when cwd is not a git repo",
+                },
               },
               required: ["prompt", "cwd"],
             },
