@@ -44,6 +44,14 @@ Hooks are registered via frontmatter headers in each `hooks/*.sh` file (`# HOOK_
 
 Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security rules.
 
+## Adding Slash Commands
+
+Slash commands are `.md` files in `slash-commands/`. To add a new command:
+1. Delegate authoring to Codex (`workspace-write`, scoped to the repo `cwd`)
+2. Claude runs `bash scripts/sync-commands.sh` to install symlinks into `~/.claude/commands/`
+
+`sync-commands.sh` is idempotent — safe to re-run. Supports `--check` and `--dry-run`.
+
 ## Blocked Subagents
 
 Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):
