@@ -13,6 +13,7 @@ set -euo pipefail
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 source "$SCRIPT_DIR/shared--log-helpers.sh"
+source "$SCRIPT_DIR/shared--codex-log-helpers.sh"
 
 MAX_ENTRIES=100
 RETENTION_DAYS=30
@@ -25,14 +26,11 @@ mkdir -p "$DETAIL_DIR"
 # Read input
 payload="$(cat)"
 
-tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
-
-# Only log Codex and Gemini calls
-case "$tool_name" in
-  mcp__delegate__codex|mcp__delegate__codex_parallel) tool_type="codex" ;;
-  mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) tool_type="gemini" ;;
-  *) exit 0 ;;
-esac
+tool_name=$(codex_log_extract_tool_name "$payload")
+tool_type=$(codex_log_tool_type "$tool_name")
+if [[ -z "$tool_type" ]]; then
+  exit 0
+fi
 
 # Extract common fields
 tool_input=$(echo "$payload" | jq -c '.tool_input // {}')
@@ -54,9 +52,8 @@ make_summary() {
 STARTED_AT=""
 compute_start_and_duration() {
   local prompt_text="$1"
-  local prompt_prefix="${prompt_text:0:100}"
   local prompt_hash
-  prompt_hash=$(printf '%s-%s' "$tool_name" "$prompt_prefix" | shasum -a 256 | cut -c1-16)
+  prompt_hash=$(codex_log_correlation_key "$tool_name" "$prompt_text")
 
   local pending_file="${PENDING_DIR}/${prompt_hash}"
   if [[ -f "$pending_file" ]]; then

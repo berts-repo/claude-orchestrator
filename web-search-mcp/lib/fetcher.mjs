@@ -1,4 +1,4 @@
-import { resolve4, resolve6 } from "node:dns/promises";
+import { lookup, resolve4, resolve6 } from "node:dns/promises";
 import { isIP } from "node:net";
 
 const USER_AGENT = "web-search-mcp/0.1 (MCP fetch tool)";
@@ -39,6 +39,43 @@ function extractMappedIpv4(hostname) {
   const [a, b] = hextets;
   const octets = [(a >> 8) & 0xff, a & 0xff, (b >> 8) & 0xff, b & 0xff];
   return octets.join(".");
+}
+
+function assertPublicAddress(addressRaw) {
+  const address = addressRaw.toLowerCase();
+  const mappedIpv4 = extractMappedIpv4(address);
+  if (
+    isPrivateIpv4(address) ||
+    address === "::1" ||
+    address.startsWith("fc") ||
+    address.startsWith("fd") ||
+    address.startsWith("fe80") ||
+    (mappedIpv4 && isPrivateIpv4(mappedIpv4))
+  ) {
+    throw errorWithCode("URL not allowed: resolved to a private/loopback IP", "ERR_URL_NOT_ALLOWED");
+  }
+}
+
+async function resolveSafeFetchAddress(urlObj) {
+  const hostname = urlObj.hostname.toLowerCase().replace(/\.+$/, "");
+  const ipv6Hostname = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+
+  let resolvedAddress;
+  if (isIP(ipv6Hostname) !== 0) {
+    resolvedAddress = ipv6Hostname;
+  } else {
+    const lookupResult = await lookup(hostname, { verbatim: true });
+    resolvedAddress = lookupResult.address;
+  }
+
+  assertPublicAddress(resolvedAddress);
+
+  const pinnedUrlObj = new URL(urlObj);
+  pinnedUrlObj.hostname = resolvedAddress;
+  return {
+    hostHeader: urlObj.host,
+    pinnedUrlObj,
+  };
 }
 
 async function assertSafeUrl(urlObj) {
@@ -94,19 +131,8 @@ async function assertSafeUrl(urlObj) {
     throw errorWithCode("URL not allowed: DNS resolution failed", "ERR_URL_NOT_ALLOWED");
   }
 
-  for (const resolvedAddressRaw of resolvedAddresses) {
-    const resolvedAddress = resolvedAddressRaw.toLowerCase();
-    const resolvedMappedIpv4 = extractMappedIpv4(resolvedAddress);
-    if (
-      isPrivateIpv4(resolvedAddress) ||
-      resolvedAddress === "::1" ||
-      resolvedAddress.startsWith("fc") ||
-      resolvedAddress.startsWith("fd") ||
-      resolvedAddress.startsWith("fe80") ||
-      (resolvedMappedIpv4 && isPrivateIpv4(resolvedMappedIpv4))
-    ) {
-      throw errorWithCode("URL not allowed: resolved to a private/loopback IP", "ERR_URL_NOT_ALLOWED");
-    }
+  for (const resolvedAddress of resolvedAddresses) {
+    assertPublicAddress(resolvedAddress);
   }
 }
 
@@ -136,12 +162,14 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     let currentUrlObj = urlObj;
     let redirectCount = 0;
     while (true) {
-      response = await fetch(currentUrlObj, {
+      const { pinnedUrlObj, hostHeader } = await resolveSafeFetchAddress(currentUrlObj);
+      response = await fetch(pinnedUrlObj, {
         method: "GET",
         redirect: "manual",
         credentials: "omit",
         signal: controller.signal,
         headers: {
+          Host: hostHeader,
           "User-Agent": USER_AGENT,
         },
       });
@@ -170,7 +198,7 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
       break;
     }
 
-    const finalUrl = response.url || currentUrlObj.href;
+    const finalUrl = currentUrlObj.href;
     let finalUrlObj;
     try {
       finalUrlObj = new URL(finalUrl);

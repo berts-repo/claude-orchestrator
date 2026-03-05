@@ -14,6 +14,7 @@ deny_on_parse_error() {
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+. "$SCRIPT_DIR/shared--normalize-cmd.sh"
 
 payload="$(cat)"
 raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null)" \
@@ -23,7 +24,7 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 # - Strip quotes, backticks, backslashes, and shell expansion chars that could obfuscate commands
 # - Collapse whitespace
 # - This catches tricks like c"u"rl, w''get, $(curl foo), etc.
-command="$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\\$(){}[]" | tr -s '[:space:]' ' ')"
+command="$(normalize_command "$raw_command" aggressive)"
 
 # Match common network client commands and programming language HTTP calls
 # Require command-token context so ".ssh" path segments do not match "ssh".

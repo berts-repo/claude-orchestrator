@@ -82,7 +82,10 @@ Credentials are stored in `~/.codex/auth.json` and read automatically by the ser
 
 ### Step 3 — Register with Claude Code
 
+Make the server executable (it uses a `#!/usr/bin/env node` shebang):
+
 ```bash
+chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
 ```
 

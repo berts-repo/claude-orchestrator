@@ -10,16 +10,15 @@ set -euo pipefail
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 source "$SCRIPT_DIR/shared--log-helpers.sh"
+source "$SCRIPT_DIR/shared--codex-log-helpers.sh"
 
 payload="$(cat)"
-tool_name=$(echo "$payload" | jq -r '.tool_name // ""')
+tool_name=$(codex_log_extract_tool_name "$payload")
 
 # Only track Codex and Gemini calls
-case "$tool_name" in
-  mcp__delegate__codex|mcp__delegate__codex_parallel) ;;
-  mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) ;;
-  *) exit 0 ;;
-esac
+if ! codex_log_is_tracked_tool "$tool_name"; then
+  exit 0
+fi
 
 ensure_dirs
 
@@ -29,8 +28,7 @@ if [[ "$tool_name" == "mcp__delegate__codex_parallel" ]]; then
 else
   prompt=$(echo "$payload" | jq -r '.tool_input.prompt // .tool_input.query // .tool_input.url // ""')
 fi
-prompt_prefix="${prompt:0:100}"
-prompt_hash=$(printf '%s-%s' "$tool_name" "$prompt_prefix" | shasum -a 256 | cut -c1-16)
+prompt_hash=$(codex_log_correlation_key "$tool_name" "$prompt")
 
 # Write epoch milliseconds to a pending marker file
 if [[ "$(uname)" == "Darwin" ]]; then

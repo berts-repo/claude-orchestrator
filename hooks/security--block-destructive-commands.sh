@@ -13,6 +13,7 @@ deny_on_parse_error() {
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+. "$SCRIPT_DIR/shared--normalize-cmd.sh"
 
 payload="$(cat)"
 raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null)" \
@@ -22,7 +23,7 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 # - Strip quotes, backticks, and backslashes that could obfuscate commands
 # - Collapse whitespace
 # - This catches tricks like r''m, c"u"rl, rm\ -rf, etc.
-command="$(printf '%s' "$raw_command" | tr -d "'\"\`\\\\" | tr -s '[:space:]' ' ')"
+command="$(normalize_command "$raw_command")"
 
 # Block destructive patterns:
 # - rm -rf, rm -f, rm --recursive, rm --force
