@@ -157,8 +157,6 @@ bash scripts/log-view.sh --gemini     # Gemini (web search/fetch) only
 bash scripts/log-view.sh auth         # keyword filter on summary/cwd
 bash scripts/log-view.sh 10 --codex   # combinable
 ```
-Or use `/delegation-log [args]` inside a Claude session.
-
 **Cleanup** — run `/log-cleanup` to:
 - Remove orphaned detail files not referenced by the summary index
 - Remove expired detail files (30+ days)
@@ -172,7 +170,6 @@ Global slash commands are installed to `~/.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
-| `/delegation-log [args]` | Browse delegation logs with full prompt/response (wraps `scripts/log-view.sh`) |
 | `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
 | `/monitor` | Dashboard showing delegation stats and security event analysis |
 | `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
