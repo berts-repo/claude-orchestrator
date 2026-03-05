@@ -221,8 +221,16 @@ else
 
     elif [[ "$type" == "gemini" ]]; then
       detail_line=$(head -1 "$detail")
-      query=$(echo "$detail_line"    | jq -r '.query // ""')
-      response=$(echo "$detail_line" | jq -r '.response // ""')
+      query=$(echo "$detail_line" | jq -r '.query // ""')
+      # response is stored as a JSON-encoded string; try to parse it as content blocks
+      response=$(echo "$detail_line" | jq -r '
+        .response // "" |
+        if (ltrimstr(" ") | startswith("[")) then
+          (. | fromjson | [.[] | select(.type == "text") | .text] | join("\n"))
+        else
+          .
+        end
+      ')
 
       echo -e "${C_LABEL}QUERY${C_RESET}"
       echo -e "${C_DIM}─────${C_RESET}"
