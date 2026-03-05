@@ -7,7 +7,7 @@
 # Detail files expire after RETENTION_DAYS
 # HOOK_EVENT: PostToolUse
 # HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex_parallel|mcp__delegate_web__search|mcp__delegate_web__fetch
-# HOOK_TIMEOUT: 10
+# HOOK_TIMEOUT: 30
 set -euo pipefail
 
 REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
@@ -33,8 +33,8 @@ if [[ -z "$tool_type" ]]; then
 fi
 
 # Extract common fields
-tool_input=$(echo "$payload" | jq -c '.tool_input // {}')
-tool_response=$(echo "$payload" | jq -r '.tool_response // "{}"')
+tool_input=$(echo "$payload" | jq -c '.tool_input // {}' 2>/dev/null || echo '{}')
+tool_response=$(echo "$payload" | jq -c '.tool_response // {}' 2>/dev/null || echo '{}')
 
 # Generate a short summary from first line of prompt/query (truncated to 80 chars)
 make_summary() {
@@ -73,6 +73,17 @@ generate_call_id() {
 # Infer success from MCP tool response payload.
 codex_response_success() {
   local response_json="$1"
+
+  # Fast path for common MCP response shape:
+  # {"content":[...],"isError":false}
+  if echo "$response_json" | jq -e 'type == "object" and has("isError") and .isError == true' >/dev/null 2>&1; then
+    echo "false"
+    return
+  fi
+  if echo "$response_json" | jq -e 'type == "object" and has("isError") and .isError == false' >/dev/null 2>&1; then
+    echo "true"
+    return
+  fi
 
   if echo "$response_json" | jq -e '
     (
@@ -126,7 +137,7 @@ compute_start_and_duration() {
 
 # Build log entry based on tool type
 if [[ "$tool_type" == "codex" ]]; then
-  thread_id=$(echo "$tool_response" | jq -r '.threadId // "unknown"')
+  thread_id=$(echo "$tool_response" | jq -r '.threadId // "unknown"' 2>/dev/null || echo "unknown")
 
   # Reject any thread_id that cannot be a safe filename component.
   # This prevents path traversal: a value like "../../.ssh/authorized_keys"
@@ -164,7 +175,7 @@ if [[ "$tool_type" == "codex" ]]; then
     sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
     approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
     cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
-    response_content=$(echo "$tool_response" | jq -r '.content // ""')
+    response_content=$(echo "$tool_response" | jq -r '.content // ""' 2>/dev/null || echo "")
     success=$(codex_response_success "$tool_response")
     if [[ "$thread_id" == "unknown" || "$thread_id" == "null" || -z "$thread_id" ]]; then
       thread_id=$(generate_call_id "codex")
@@ -247,7 +258,7 @@ if [[ "$tool_type" == "codex" ]]; then
       --arg started_at "${STARTED_AT:-}")
   fi
 
-elif [[ "$tool_type" == "gemini" ]]; then
+elif [[ "$tool_type" == "web" || "$tool_type" == "gemini" ]]; then
   query=$(echo "$tool_input" | jq -r '.query // .url // .prompt // ""')
   response_content=$(echo "$tool_response" | jq -r 'if type == "string" then . else (tostring) end' 2>/dev/null || echo "$tool_response")
 
