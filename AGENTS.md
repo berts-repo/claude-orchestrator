@@ -107,6 +107,16 @@ When generating tests, follow these practices:
 The following commands are pre-approved for use:
 
 ```
+# Read-only inspection (always allowed)
+cat
+ls
+find
+rg
+grep
+head
+tail
+wc
+
 # Testing
 npm test
 npm run test
