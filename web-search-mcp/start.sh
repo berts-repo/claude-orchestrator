@@ -36,7 +36,7 @@ fi
 SEARCH_PROVIDER="${SEARCH_PROVIDER:-gemini}"
 
 if [ "$SEARCH_PROVIDER" = "gemini" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
-  echo "[delegate-web] No API key found. Set GEMINI_API_KEY, store in keyring, or create .env" >&2
+  echo "[delegate-web] No API key found. Set GEMINI_API_KEY or SEARCH_API_KEY, store in keyring, or create .env" >&2
   exit 1
 fi
 
