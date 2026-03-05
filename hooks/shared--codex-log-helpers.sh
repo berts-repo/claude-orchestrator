@@ -31,10 +31,10 @@ codex_log_is_tracked_tool() {
 }
 
 # codex_log_correlation_key — stable key used between PreToolUse and PostToolUse
-# Uses tool name + first 100 chars of prompt/query payload text.
+# Hashes tool name + full prompt text to avoid collisions on parallel calls
+# with identical prompt prefixes.
 codex_log_correlation_key() {
   local tool_name="$1"
   local prompt_text="$2"
-  local prompt_prefix="${prompt_text:0:100}"
-  printf '%s-%s' "$tool_name" "$prompt_prefix" | shasum -a 256 | cut -c1-16
+  printf '%s-%s' "$tool_name" "$prompt_text" | shasum -a 256 | cut -c1-16
 }
