@@ -41,7 +41,7 @@ bash scripts/log-view.sh auth         # keyword filter
 
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
-# Available: /delegation-log, /log-cleanup, /monitor, /summarize, /session
+# Available: /log-cleanup, /monitor, /summarize, /session
 # /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
 ```
 
