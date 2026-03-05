@@ -39,8 +39,8 @@ bash scripts/log-view.sh --codex 10   # last 10 Codex entries
 bash scripts/log-view.sh --web         # web/Gemini entries only
 bash scripts/log-view.sh auth         # keyword filter
 
-# Install slash commands
-cp slash-commands/*.md ~/.claude/commands/
+# Install slash commands (symlinks; re-run after adding new commands)
+bash scripts/sync-commands.sh
 # Available: /delegation-log, /log-cleanup, /monitor, /summarize, /session
 # /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
 ```

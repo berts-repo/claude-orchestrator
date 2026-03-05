@@ -1,11 +1,20 @@
-Read the following two log files and produce a monitoring report:
+Produce a monitoring report for this orchestration setup.
 
-1. `~/.claude/logs/delegations.jsonl` — delegation audit log (Codex and Gemini calls)
-2. `~/.claude/logs/security-events.jsonl` — security event log (blocked actions)
+Delegate to Codex with:
+- sandbox: read-only
+- approval_policy: never
+- cwd: current working directory
+
+Use this Codex prompt:
+
+---
+Read the following two log files:
+1. ~/.claude/logs/delegations.jsonl — delegation audit log (Codex and Gemini calls)
+2. ~/.claude/logs/security-events.jsonl — security event log (blocked actions)
 
 If either file is missing or empty, note that in the report and continue with whatever data is available.
 
-Both log files use a unified schema with these envelope fields: `timestamp`, `level`, `component`, `session_id`, `event`, plus event-specific fields.
+Both log files use a unified schema with envelope fields: `timestamp`, `level`, `component`, `session_id`, `event`, plus event-specific fields.
 
 Produce a report with these sections:
 
@@ -44,3 +53,6 @@ Flag any of these conditions:
 One-paragraph assessment of the overall health of the orchestration setup.
 
 Format the report with markdown tables where appropriate. Keep it concise — this is a dashboard, not a deep dive.
+---
+
+After Codex returns, display the report verbatim.
