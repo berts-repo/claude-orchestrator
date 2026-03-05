@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook
 # Detects explicit web search intent and injects context
-# directing Claude to use the web_search MCP tool.
+# directing Claude to use the search MCP tool.
 # HOOK_EVENT: UserPromptSubmit
 # HOOK_TIMEOUT: 5
 set -euo pipefail
@@ -15,7 +15,7 @@ if echo "$prompt" | grep -Eiq '(search the web|search online|web search|look up 
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "The user explicitly requested web access. Use the web_search MCP tool to fulfill this request. Cite all sources returned by the tool."
+    "additionalContext": "The user explicitly requested web access. Use the search MCP tool to fulfill this request. Cite all sources returned by the tool."
   }
 }
 EOF

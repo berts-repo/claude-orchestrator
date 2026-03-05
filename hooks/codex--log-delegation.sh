@@ -6,7 +6,7 @@
 # Keeps the last MAX_ENTRIES summary entries (FIFO rotation)
 # Detail files expire after RETENTION_DAYS
 # HOOK_EVENT: PostToolUse
-# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex_parallel|mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize
+# HOOK_MATCHER: mcp__delegate__codex|mcp__delegate__codex_parallel|mcp__delegate_web__search|mcp__delegate_web__fetch
 # HOOK_TIMEOUT: 10
 set -euo pipefail
 
@@ -45,6 +45,52 @@ make_summary() {
     echo "${first_line:0:77}..."
   else
     echo "$first_line"
+  fi
+}
+
+# Generate a stable per-call id when threadId is unavailable.
+generate_call_id() {
+  local prefix="${1:-call}"
+  local ts
+  if [[ "$(uname)" == "Darwin" ]]; then
+    ts=$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || date +%s000)
+  else
+    ts=$(date +%s%3N 2>/dev/null || date +%s000)
+  fi
+
+  if command -v uuidgen >/dev/null 2>&1; then
+    local uuid
+    uuid=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+    if [[ -n "$uuid" ]]; then
+      echo "${prefix}-${uuid}"
+      return
+    fi
+  fi
+
+  echo "${prefix}-${ts}-$$-${RANDOM}"
+}
+
+# Infer success from MCP tool response payload.
+codex_response_success() {
+  local response_json="$1"
+
+  if echo "$response_json" | jq -e '
+    (
+      [ .. | objects | .isError? | select(. == true) ] | length
+    ) > 0
+    or (
+      [ .. | objects | .success? | select(. == false) ] | length
+    ) > 0
+    or (
+      [ .. | objects | .error? | select(. != null and . != "" and . != false) ] | length
+    ) > 0
+    or (
+      [ .. | strings | select(test("FAILED \\(exit|\\bError:|timed out|failed to spawn codex"; "i")) ] | length
+    ) > 0
+  ' >/dev/null 2>&1; then
+    echo "false"
+  else
+    echo "true"
   fi
 }
 
@@ -113,17 +159,15 @@ if [[ "$tool_type" == "codex" ]]; then
     cwd=$(echo "$prompt" | jq -r '.[0].cwd // "unknown"')
     thread_id="parallel-$(date +%s)-$$"
     response_content=$(echo "$tool_response" | jq -r 'if type == "array" then (map(.content // "") | join("\n")) elif type == "string" then . else tostring end' 2>/dev/null || echo "")
-    success=true
+    success=$(codex_response_success "$tool_response")
   else
     sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
     approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
     cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
     response_content=$(echo "$tool_response" | jq -r '.content // ""')
-
-    if [[ "$thread_id" != "unknown" && "$thread_id" != "null" && -n "$thread_id" ]]; then
-      success=true
-    else
-      success=false
+    success=$(codex_response_success "$tool_response")
+    if [[ "$thread_id" == "unknown" || "$thread_id" == "null" || -z "$thread_id" ]]; then
+      thread_id=$(generate_call_id "codex")
     fi
 
     summary=$(make_summary "$prompt")
@@ -210,6 +254,37 @@ elif [[ "$tool_type" == "gemini" ]]; then
   summary=$(make_summary "$query")
   duration_ms=$(compute_start_and_duration "$query")
 
+  gemini_success="false"
+  gemini_parse_error="false"
+  gemini_response_raw="${CLAUDE_TOOL_RESPONSE:-}"
+
+  if [[ -z "$gemini_response_raw" ]]; then
+    gemini_parse_error="true"
+  elif ! echo "$gemini_response_raw" | jq -e '.' >/dev/null 2>&1; then
+    gemini_parse_error="true"
+  else
+    gemini_is_error=$(echo "$gemini_response_raw" | jq -r 'if (type == "object" and .isError == true) then "true" else "false" end')
+    gemini_nonzero_exit=$(echo "$gemini_response_raw" | jq -r '
+      [
+        .. | objects |
+        (.exit_code? // .exitCode? // .["exit-code"]? // empty) |
+        (try tonumber catch empty) |
+        select(. != 0)
+      ] | length > 0
+    ')
+    gemini_has_expected_result=$(echo "$gemini_response_raw" | jq -r '
+      if type == "object" then
+        (has("content") or has("result") or has("response") or has("text"))
+      else
+        false
+      end
+    ')
+
+    if [[ "$gemini_is_error" == "false" && "$gemini_nonzero_exit" == "false" && "$gemini_has_expected_result" == "true" ]]; then
+      gemini_success="true"
+    fi
+  fi
+
   # Gemini has no threadId, generate a unique id
   detail_id="gemini-$(date +%s)-$$"
   detail_file="${DETAIL_DIR}/${detail_id}.jsonl"
@@ -218,7 +293,8 @@ elif [[ "$tool_type" == "gemini" ]]; then
     --arg tool "$tool_name" \
     --arg query "$query" \
     --arg response "$response_content" \
-    --argjson success true \
+    --argjson success "$gemini_success" \
+    --argjson parse_error "$gemini_parse_error" \
     --argjson duration_ms "$duration_ms" \
     --arg started_at "${STARTED_AT:-}" \
     > "$detail_file"
@@ -229,7 +305,8 @@ elif [[ "$tool_type" == "gemini" ]]; then
     --arg tool "$tool_name" \
     --arg summary "$summary" \
     --arg detail "$detail_file" \
-    --argjson success true \
+    --argjson success "$gemini_success" \
+    --argjson parse_error "$gemini_parse_error" \
     --argjson duration_ms "$duration_ms" \
     --arg started_at "${STARTED_AT:-}")
 fi

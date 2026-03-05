@@ -109,6 +109,19 @@ sensitive_patterns=(
 )
 
 for pattern in "${sensitive_patterns[@]}"; do
+  if [[ "$pattern" == "\\.env($|[^a-zA-Z])" ]]; then
+    env_matches=$(printf '%s\n' "$target" | grep -oE '\.env(\.[A-Za-z0-9._-]+)?' || true)
+    if [[ -n "$env_matches" ]]; then
+      while IFS= read -r env_match; do
+        [[ -z "$env_match" ]] && continue
+        if [[ ! "$env_match" =~ ^\.env\.(example(\.[A-Za-z0-9._-]+)?|template|sample)$ ]]; then
+          deny "Blocked access to sensitive file matching pattern: $pattern"
+        fi
+      done <<<"$env_matches"
+    fi
+    continue
+  fi
+
   if printf '%s\n' "$target" | grep -qE "$pattern"; then
     deny "Blocked access to sensitive file matching pattern: $pattern"
   fi

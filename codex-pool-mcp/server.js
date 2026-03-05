@@ -31,10 +31,22 @@ const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/System", "/Library"];
-const ALLOWED_CWD_ROOTS = [process.env.HOME, "/Users", "/home", "/tmp", "/var/folders"]
-  .filter(Boolean)
-  .map((root) => path.resolve(root));
+const USER_HOME = path.resolve(process.env.HOME ?? homedir());
+const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"];
+
+function parseAllowedCwdRoots() {
+  const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
+  const defaultRoots = USER_HOME ? [USER_HOME] : [];
+  const roots = (configured ? configured.split(",") : defaultRoots)
+    .map((root) => root.trim())
+    .filter(Boolean)
+    .filter((root) => path.isAbsolute(root))
+    .map((root) => path.resolve(root));
+  const deduped = Array.from(new Set(roots));
+  return deduped.length > 0 ? deduped : defaultRoots;
+}
+
+const ALLOWED_CWD_ROOTS = parseAllowedCwdRoots();
 
 // Resolve API key: env var first, then ~/.codex/auth.json (where Codex stores it)
 function resolveApiKey() {
@@ -57,7 +69,7 @@ const TaskSchema = z.object({
   prompt: z.string().min(1).describe("The task prompt for Codex"),
   cwd: z.string().min(1).describe("Absolute path to the working directory to mount"),
   sandbox: SandboxMode.default("workspace-write"),
-  "approval-policy": ApprovalPolicy.optional().describe("When Codex must ask for approval"),
+  "approval-policy": ApprovalPolicy.default("on-failure").describe("When Codex must ask for approval"),
   model: z.string().optional().describe("Model override (e.g. 'o4-mini')"),
   "base-instructions": z.string().optional().describe("Override system instructions"),
 });
@@ -201,6 +213,13 @@ function isWithinRoot(targetPath, rootPath) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
+function getHomeDepth(targetPath) {
+  if (!USER_HOME || !isWithinRoot(targetPath, USER_HOME)) return null;
+  const rel = path.relative(USER_HOME, targetPath);
+  if (!rel) return 0;
+  return rel.split(path.sep).filter(Boolean).length;
+}
+
 function normalizeTask(task, taskLabel = "task") {
   if (!path.isAbsolute(task.cwd)) {
     throw new Error(
@@ -221,7 +240,14 @@ function normalizeTask(task, taskLabel = "task") {
   const inAllowedRoot = ALLOWED_CWD_ROOTS.some((root) => isWithinRoot(normalizedCwd, root));
   if (!inAllowedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must be within allowed roots: ${ALLOWED_CWD_ROOTS.join(", ")}`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED_CWD_ROOTS (current: ${ALLOWED_CWD_ROOTS.join(", ")}).`
+    );
+  }
+
+  const homeDepth = getHomeDepth(normalizedCwd);
+  if (homeDepth !== null && homeDepth < 2) {
+    throw new Error(
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. For workspace-write safety, cwd under '${USER_HOME}' must be at least 2 path components below home (example allowed: '${USER_HOME}/Git/myproject').`
     );
   }
 
@@ -348,7 +374,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "codex") {
-    const task = normalizeTask(TaskSchema.parse(args), "codex");
+    const parsedTask = TaskSchema.parse(args);
+    const task = normalizeTask(
+      {
+        ...parsedTask,
+        "approval-policy": parsedTask["approval-policy"] ?? "on-failure",
+      },
+      "codex"
+    );
     const result = await runCodexContainer(task, 0);
     return {
       content: [{ type: "text", text: formatResult(result) }],
@@ -358,9 +391,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "codex_parallel") {
     const { tasks } = ParallelSchema.parse(args);
-    const normalizedTasks = tasks.map((task, i) =>
-      normalizeTask(task, `codex_parallel task ${i + 1}`)
-    );
+    const normalizedTasks = tasks.map((task, i) => {
+      const taskWithApprovalPolicy = {
+        ...task,
+        "approval-policy": task["approval-policy"] ?? "on-failure",
+      };
+      return normalizeTask(taskWithApprovalPolicy, `codex_parallel task ${i + 1}`);
+    });
     // Fan out — all containers start immediately
     const batchStart = Date.now();
     const results = await Promise.all(

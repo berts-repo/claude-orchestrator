@@ -38,6 +38,7 @@ Claude Code (local orchestrator)
 ```
 
 Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
+For the web MCP: register the server as `delegate-web`, while hook/tool matchers use the `delegate_web` namespace (`mcp__delegate_web__*`).
 
 ---
 
@@ -56,9 +57,8 @@ Claude Code spawns each MCP server as a child process and communicates over stdi
 
 Tools exposed:
 
-* `web_search` — queries Gemini with Google Search grounding, returns a summary and source URLs
-* `web_fetch` — fetches a URL, extracts readable content via Readability, returns Markdown or plain text
-* `web_summarize` — fetches a URL and returns a concise summary
+* `search` — queries Gemini with Google Search grounding, returns a summary and source URLs
+* `fetch` — fetches a URL, extracts readable content via Readability, returns Markdown or plain text
 
 Internet access is triggered by explicit user intent:
 
@@ -104,17 +104,16 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 
 | Hook | Event | Purpose |
 |---|---|---|
-| `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
-| `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a web_search hint before inference |
+| `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use search" context |
+| `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a search hint before inference |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
 | `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files when untrusted web content is loaded |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
-| `codex--enforce-code-write.sh` | PreToolUse (Write) | Blocks direct creation of substantial new code files (≥25 lines); requires Codex delegation |
 | `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Records start time for duration tracking |
+| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
 | `shared--codex-log-helpers.sh` | (helper) | Codex logging helpers; `codex_log_correlation_key` hashes the full prompt to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
@@ -264,7 +263,7 @@ chmod 600 web-search-mcp/.env
 
 # 5. Register MCP servers
 chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js  # needs execute bit (shebang-based)
-claude mcp add -s user gemini_web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
 
 # 6. Install hooks and apply manifest wiring
@@ -275,7 +274,7 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # gemini_web and delegate should show "Connected"
+claude mcp list                # delegate-web and delegate should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/         # slash commands should be present
 
@@ -301,9 +300,8 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 {
   "permissions": {
     "allow": [
-      "mcp__gemini_web__web_search",
-      "mcp__gemini_web__web_fetch",
-      "mcp__gemini_web__web_summarize",
+      "mcp__delegate_web__search",
+      "mcp__delegate_web__fetch",
       "mcp__delegate__codex",
       "mcp__delegate__codex_parallel"
     ],
