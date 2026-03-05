@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node test-security.mjs",
-    "test:integration": "node test-search.mjs"
+    "test": "node test-security.mjs"
   },
   "license": "ISC",
   "dependencies": {

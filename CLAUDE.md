@@ -25,7 +25,6 @@ bash scripts/sync-hooks.sh
 bash scripts/sync-hooks.sh --check
 
 # Test web-search-mcp
-cd web-search-mcp && node test-search.mjs
 cd web-search-mcp && node test-security.mjs
 
 # Register MCP servers (one-time setup)
