@@ -32,7 +32,7 @@ User Intent
 Claude Code (local orchestrator)
    - agents, hooks, workflows
    |
-   +---> delegate-web MCP Server (stdio) --- Gemini API (web search + fetch)
+   +---> delegate-web MCP Server (stdio) --- Web API (Gemini/Brave/…)
    |
    +---> codex-delegation MCP Server (stdio) -- codex exec subprocesses (sandboxed)
 ```

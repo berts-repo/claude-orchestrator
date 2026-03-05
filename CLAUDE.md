@@ -47,7 +47,7 @@ cp slash-commands/*.md ~/.claude/commands/
 
 ```
 Claude Code (orchestrator)
-  ├── delegate-web MCP  (web-search-mcp/server.mjs) ─── Gemini API
+  ├── delegate-web MCP  (web-search-mcp/server.mjs) ─── Web API (Gemini/Brave/…)
   └── codex-delegation MCP    (codex-delegation-mcp/server.js)  ─── codex exec subprocesses
 ```
 
