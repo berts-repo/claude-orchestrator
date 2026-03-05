@@ -33,6 +33,13 @@ Always set `cwd` to an absolute path.
 
 **Safety:** Default to `workspace-write`. Use `read-only` for analysis-only. Only use `danger-full-access` when explicitly requested, paired with `approval-policy: "untrusted"`. Include test/verification commands in prompts. When `git diff` exceeds 100 lines, delegate to Codex `read-only` to summarize.
 
+**Prompt efficiency — prefer path references over inlined content.**
+Codex can read any file accessible within its sandbox. Use the absolute path in the prompt and instruct Codex to read it. Only inline content when:
+- The file does not exist yet (you are specifying what to create)
+- The snippet is short (< ~20 lines)
+
+Avoid embedding hundreds of lines of existing file content in a prompt.
+
 **Claude is a spec-writer, not a code-writer.** For any task in the table above, Claude's job is to write a clear Codex prompt and delegate — not to implement. Do NOT use Read, Glob, Grep, or Bash to explore files before delegating. Embed exploration instructions inside the Codex prompt instead. The default "read files before modifying" rule does not apply when the task is being delegated.
 
 ## Adding Hooks
