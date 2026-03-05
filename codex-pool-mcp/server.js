@@ -24,12 +24,17 @@ import {
 import { spawn } from "child_process";
 import { readFileSync } from "fs";
 import { homedir } from "os";
+import path from "path";
 import { z } from "zod";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/System", "/Library"];
+const ALLOWED_CWD_ROOTS = [process.env.HOME, "/Users", "/home", "/tmp", "/var/folders"]
+  .filter(Boolean)
+  .map((root) => path.resolve(root));
 
 // Resolve API key: env var first, then ~/.codex/auth.json (where Codex stores it)
 function resolveApiKey() {
@@ -191,6 +196,50 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
   });
 }
 
+function isWithinRoot(targetPath, rootPath) {
+  const rel = path.relative(rootPath, targetPath);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function normalizeTask(task, taskLabel = "task") {
+  if (!path.isAbsolute(task.cwd)) {
+    throw new Error(
+      `${taskLabel}: invalid cwd '${task.cwd}'. cwd must be an absolute path within allowed roots: ${ALLOWED_CWD_ROOTS.join(", ")}`
+    );
+  }
+
+  const normalizedCwd = path.resolve(task.cwd);
+  const blockedRoot = BLOCKED_CWD_ROOTS.find(
+    (blocked) => normalizedCwd === blocked || normalizedCwd.startsWith(`${blocked}/`)
+  );
+  if (blockedRoot) {
+    throw new Error(
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. Root/system directory '${blockedRoot}' is not allowed.`
+    );
+  }
+
+  const inAllowedRoot = ALLOWED_CWD_ROOTS.some((root) => isWithinRoot(normalizedCwd, root));
+  if (!inAllowedRoot) {
+    throw new Error(
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must be within allowed roots: ${ALLOWED_CWD_ROOTS.join(", ")}`
+    );
+  }
+
+  let approvalPolicy = task["approval-policy"];
+  if (task.sandbox === "danger-full-access" && approvalPolicy !== "untrusted") {
+    console.warn(
+      `[codex-pool] ${taskLabel}: sandbox=danger-full-access requires approval-policy=untrusted; forcing untrusted.`
+    );
+    approvalPolicy = "untrusted";
+  }
+
+  return {
+    ...task,
+    cwd: normalizedCwd,
+    ...(approvalPolicy !== undefined ? { "approval-policy": approvalPolicy } : {}),
+  };
+}
+
 // ── Format result for MCP response ─────────────────────────────────────────
 
 function formatResult(result) {
@@ -299,7 +348,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "codex") {
-    const task = TaskSchema.parse(args);
+    const task = normalizeTask(TaskSchema.parse(args), "codex");
     const result = await runCodexContainer(task, 0);
     return {
       content: [{ type: "text", text: formatResult(result) }],
@@ -309,10 +358,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "codex_parallel") {
     const { tasks } = ParallelSchema.parse(args);
+    const normalizedTasks = tasks.map((task, i) =>
+      normalizeTask(task, `codex_parallel task ${i + 1}`)
+    );
     // Fan out — all containers start immediately
     const batchStart = Date.now();
     const results = await Promise.all(
-      tasks.map((task, i) => runCodexContainer(task, i, batchStart))
+      normalizedTasks.map((task, i) => runCodexContainer(task, i, batchStart))
     );
     const allSucceeded = results.every((r) => r.success);
     return {

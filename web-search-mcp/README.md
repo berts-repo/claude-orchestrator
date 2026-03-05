@@ -157,7 +157,7 @@ chmod +x start.sh
 
 ### Step 3 — Configure the API Key
 
-Pick one of these methods (checked in this order by `start.sh`):
+Pick one of these methods (`start.sh` checks them in this order):
 
 **Option A: Environment variable (simplest)**
 
@@ -167,13 +167,15 @@ export GEMINI_API_KEY="your-key-here"
 
 Add to your `~/.zshrc` (or `~/.bashrc`) to persist.
 
-**Option B: macOS Keychain**
+**Option B: GNOME Keyring (Linux only)**
 
 ```bash
-security add-generic-password -a "mcp-delegate-web" -s "mcp-delegate-web" -w "your-key-here"
+secret-tool store --label="MCP Gemini Web" service mcp-delegate-web account api-key
 ```
 
-> **Linux alternative:** Use GNOME Keyring with `secret-tool store --label="MCP Gemini Web" service mcp-delegate-web account api-key`.
+Then enter your key when prompted. `start.sh` calls `secret-tool lookup` to retrieve it if `GEMINI_API_KEY` is not already set.
+
+> **macOS note:** macOS Keychain (`security`) is not supported by `start.sh`. Use Option A or C on macOS.
 
 **Option C: Local .env file (dev convenience)**
 
@@ -181,6 +183,8 @@ security add-generic-password -a "mcp-delegate-web" -s "mcp-delegate-web" -w "yo
 echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/web-search-mcp/.env
 chmod 600 ~/git/claude-orchestrator/web-search-mcp/.env
 ```
+
+> **Note:** `.env` is loaded after the env var and keyring checks. Variables already set in the environment take precedence.
 
 ### Step 4 — Test Standalone
 
@@ -295,10 +299,10 @@ The server registers two tools (`web_search`, `web_fetch`) and two resources (`s
 
 ### Launcher (`start.sh`)
 
-Resolves the API key from three sources (in order):
-1. `GEMINI_API_KEY` environment variable
-2. macOS Keychain / GNOME Keyring via `secret-tool`
-3. Local `.env` file
+Resolves the API key in this order:
+1. `GEMINI_API_KEY` environment variable (if already set, used as-is)
+2. GNOME Keyring via `secret-tool lookup` (Linux only; skipped if `secret-tool` is not installed)
+3. Local `.env` file (loaded last; may set `GEMINI_API_KEY` if still unset)
 
 Then starts the server with `exec node server.mjs`.
 
@@ -346,6 +350,7 @@ Search the web and return grounded results with source URLs.
 **Parameters:**
 - `query` (string, required): Search query. Max 500 characters.
 - `max_results` (integer, optional): Number of sources to return. 1-10, default 5.
+- `provider` (`"gemini"` | `"brave"`, optional): Override the active search provider for this call. Defaults to the provider set by `SEARCH_PROVIDER` env var (default: `gemini`).
 
 **Returns:** Markdown text with a summary paragraph and source URLs, wrapped in untrust markers.
 
@@ -441,6 +446,25 @@ npx @modelcontextprotocol/inspector node server.mjs
 
 Open the inspector UI and go to the **Resources** tab. You will see `Cache Statistics` listed. Clicking it fetches the live JSON.
 
+### `search://config`
+
+Returns the active server configuration: the current provider name and all available providers.
+
+**Request:** `resources/read` with `uri: "search://config"`
+
+**Response (`application/json`):**
+```json
+{
+  "activeProvider": "gemini",
+  "availableProviders": ["gemini", "brave"]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `activeProvider` | The provider currently in use (set by `SEARCH_PROVIDER` env var) |
+| `availableProviders` | All providers registered in `providers/index.mjs` |
+
 ---
 
 ## Environment Variables
@@ -462,11 +486,11 @@ Open the inspector UI and go to the **Resources** tab. You will see `Cache Stati
 
 The launcher checks three sources in order. Make sure at least one is set:
 ```bash
-# Check environment
+# Check environment variable
 echo $GEMINI_API_KEY
 
-# Check macOS Keychain
-security find-generic-password -a "mcp-delegate-web" -s "mcp-delegate-web" -w
+# Check GNOME Keyring (Linux only)
+secret-tool lookup service mcp-delegate-web account api-key
 
 # Check .env file
 cat ~/git/claude-orchestrator/web-search-mcp/.env

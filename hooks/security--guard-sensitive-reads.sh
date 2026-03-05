@@ -91,17 +91,18 @@ fi
 
 # Expand ~ to $HOME for matching
 expanded_home="$HOME"
+home_path_prefix="(${expanded_home}|~|['\"]?\\\$HOME['\"]?|['\"]?\\\$\\{HOME\\}['\"]?)"
 
 # Block sensitive paths (but allow ~/.config/ generally)
 sensitive_patterns=(
-  "(${expanded_home}|~)/\.ssh"
-  "(${expanded_home}|~)/\.aws"
-  "(${expanded_home}|~)/\.config/(gcloud|gh|claude|codex)"
-  "(${expanded_home}|~)/\.config/[Bb]itwarden"
-  "(${expanded_home}|~)/\.config/1[Pp]assword"
-  "(${expanded_home}|~)/\.1password"
-  "(${expanded_home}|~)/\.codex"
-  "(${expanded_home}|~)/\.claude\.json"
+  "${home_path_prefix}/\.ssh"
+  "${home_path_prefix}/\.aws"
+  "${home_path_prefix}/\.config/(gcloud|gh|claude|codex)"
+  "${home_path_prefix}/\.config/[Bb]itwarden"
+  "${home_path_prefix}/\.config/1[Pp]assword"
+  "${home_path_prefix}/\.1password"
+  "${home_path_prefix}/\.codex"
+  "${home_path_prefix}/\.claude\.json"
   "\.env($|[^a-zA-Z])"
   "id_rsa|id_ed25519|id_ecdsa"
   "\.pem(\s|$|[|;&>])"
