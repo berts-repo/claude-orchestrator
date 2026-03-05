@@ -34,7 +34,7 @@ Claude Code (local orchestrator)
    |
    +---> delegate-web MCP Server (stdio) --- Gemini API (web search + fetch)
    |
-   +---> codex-pool MCP Server (stdio) -- codex exec subprocesses (sandboxed)
+   +---> codex-delegation MCP Server (stdio) -- codex exec subprocesses (sandboxed)
 ```
 
 Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
@@ -69,7 +69,7 @@ Internet access is triggered by explicit user intent:
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
-### codex-pool (Codex Subprocess Dispatcher)
+### codex-delegation (Codex Subprocess Dispatcher)
 
 | | |
 |---|---|
@@ -78,7 +78,7 @@ Returned data is retrieval-only: short summaries, source URLs, brief excerpts. R
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[codex-pool-mcp/](codex-pool-mcp/)** |
+| Location | **[codex-delegation-mcp/](codex-delegation-mcp/)** |
 
 Tools exposed:
 
@@ -253,7 +253,7 @@ cp CLAUDE.global.md CLAUDE.md
 
 # 3. Install dependencies for both MCP servers
 cd web-search-mcp && npm install
-cd ../codex-pool-mcp && npm install
+cd ../codex-delegation-mcp && npm install
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
@@ -262,9 +262,9 @@ chmod 600 web-search-mcp/.env
 # Edit .env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers
-chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js  # needs execute bit (shebang-based)
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js  # needs execute bit (shebang-based)
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
