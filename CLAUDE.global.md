@@ -9,7 +9,7 @@
 
 ## Codex Delegation
 
-Delegate code-heavy tasks to Codex via `mcp__delegate__codex`. Always set `cwd` explicitly.
+Delegate code-heavy tasks to Codex via `mcp__delegate__codex` (single) or `mcp__delegate__codex_parallel` (parallel array). Always set `cwd` explicitly.
 
 | Task Type | Sandbox | Approval Policy |
 |-----------|---------|-----------------|
@@ -20,7 +20,7 @@ Delegate code-heavy tasks to Codex via `mcp__delegate__codex`. Always set `cwd` 
 | Codebase exploration / analysis | `read-only` | `never` |
 | Changelog / error analysis | `read-only` | `never` |
 | Lint / format fixing | `workspace-write` | `on-failure` |
-| Dependency audit | `read-only` + Gemini | `never` |
+| Dependency audit | `read-only` | `never` |
 
 **Safety:** Default to `workspace-write`. Use `read-only` for analysis-only. Only use `danger-full-access` when explicitly requested, paired with `approval-policy: "untrusted"`. Include test/verification commands in prompts. When `git diff` exceeds 100 lines, delegate to Codex `read-only` to summarize.
 
