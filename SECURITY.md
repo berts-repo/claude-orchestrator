@@ -6,9 +6,9 @@ Active security measures for the Claude Code + MCP orchestration setup.
 
 ## Hooks
 
-### `guard-sensitive-reads.sh` — Block Credential Access
+### `security--guard-sensitive-reads.sh` — Block Credential Access
 
-**Type:** PreToolUse (Read, Bash)
+**Type:** PreToolUse (Read, Bash, Glob, Edit, Write)
 
 Blocks reads of sensitive files to prevent credential exfiltration:
 - `~/.ssh/`, `~/.aws/`, `~/.codex/`
@@ -19,7 +19,7 @@ Blocks reads of sensitive files to prevent credential exfiltration:
 
 **Location:** `hooks/security--guard-sensitive-reads.sh`
 
-### `restrict-bash-network.sh` — Block Direct Network Access
+### `security--restrict-bash-network.sh` — Block Direct Network Access
 
 **Type:** PreToolUse (Bash)
 
@@ -34,7 +34,7 @@ Blocked commands:
 
 **Location:** `hooks/security--restrict-bash-network.sh`
 
-### `block-destructive-commands.sh` — Block Dangerous Operations
+### `security--block-destructive-commands.sh` — Block Dangerous Operations
 
 **Type:** PreToolUse (Bash)
 
@@ -64,7 +64,7 @@ OS-level sandboxing for Codex CLI execution.
 - `codex-strict.sb` — No network, restricted filesystem
 - `codex-network.sb` — Network allowed, restricted filesystem
 
-**Location:** `codex-sandbox-mcp/platforms/`
+**Note:** Custom sandbox profiles are not yet implemented in this repo. Codex's built-in `--sandbox` flag handles OS-level isolation via the modes documented in [codex-pool-mcp/README.md](codex-pool-mcp/README.md).
 
 ---
 
@@ -74,7 +74,7 @@ Registered in `~/.claude.json`:
 
 | Server | Purpose |
 |--------|---------|
-| `codex` | Code execution in sandbox |
+| `delegate` | Code execution via Codex subprocesses (codex-pool-mcp) |
 | `delegate-web` | Web search via Gemini |
 
 ---
@@ -99,6 +99,8 @@ When any PreToolUse hook denies an action, the event is automatically logged to 
 **Rotation:** FIFO, keeps last 200 entries.
 
 **Monitoring:** Run `/monitor` for an on-demand dashboard analyzing both delegation logs and security events.
+
+**Log viewer:** `bash scripts/log-view.sh` browses full prompt/response content from the terminal (supports `--list`, `--codex`, `--gemini`, keyword filter, count). Use `/delegation-log [args]` for the same inside a Claude session.
 
 ---
 
