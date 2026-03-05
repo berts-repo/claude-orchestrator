@@ -64,7 +64,7 @@ OS-level sandboxing for Codex CLI execution.
 - `codex-strict.sb` — No network, restricted filesystem
 - `codex-network.sb` — Network allowed, restricted filesystem
 
-**Note:** Custom sandbox profiles are not yet implemented in this repo. Codex's built-in `--sandbox` flag handles OS-level isolation via the modes documented in [codex-pool-mcp/README.md](codex-pool-mcp/README.md).
+**Note:** Custom sandbox profiles are not yet implemented in this repo. Codex's built-in `--sandbox` flag handles OS-level isolation via the modes documented in [codex-delegation-mcp/README.md](codex-delegation-mcp/README.md).
 
 ---
 
@@ -74,7 +74,7 @@ Registered in `~/.claude.json`:
 
 | Server | Purpose |
 |--------|---------|
-| `delegate` | Code execution via Codex subprocesses (codex-pool-mcp) |
+| `delegate` | Code execution via Codex subprocesses (codex-delegation-mcp) |
 | `delegate-web` | Web search via Gemini |
 
 ---

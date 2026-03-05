@@ -21,7 +21,7 @@ Claude Code
     │
     │ MCP tool call: codex / codex_parallel
     ▼
-codex-pool-mcp (server.js)
+codex-delegation-mcp (server.js)
     │
     │ spawn: codex exec --ephemeral -s <sandbox>
     ├── subprocess 1 ─── Codex CLI ─── OpenAI API
@@ -36,7 +36,7 @@ For `codex_parallel`, all subprocesses start simultaneously via `Promise.all`. W
 ## File Map
 
 ```
-codex-pool-mcp/
+codex-delegation-mcp/
 ├── README.md        # This file
 ├── server.js        # MCP server — registers codex and codex_parallel tools
 ├── package.json     # Dependencies: @modelcontextprotocol/sdk, zod
@@ -58,7 +58,7 @@ codex-pool-mcp/
 ### Step 1 — Install Dependencies
 
 ```bash
-cd ~/git/claude-orchestrator/codex-pool-mcp
+cd ~/git/claude-orchestrator/codex-delegation-mcp
 npm install
 ```
 
@@ -85,8 +85,8 @@ Credentials are stored in `~/.codex/auth.json` and read automatically by the ser
 Make the server executable (it uses a `#!/usr/bin/env node` shebang):
 
 ```bash
-chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 ```
 
 Verify registration:

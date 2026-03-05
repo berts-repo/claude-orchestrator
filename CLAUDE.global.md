@@ -9,7 +9,7 @@
 
 ## Codex Delegation
 
-The `delegate` MCP server is **codex-pool-mcp** — a parallel subprocess dispatcher.
+The `delegate` MCP server is **codex-delegation-mcp** — a parallel subprocess dispatcher.
 Each call spawns an independent `codex exec` process. `codex_parallel` fans out to N processes simultaneously.
 
 - `mcp__delegate__codex` — single task (backward compat, same parameters as before)

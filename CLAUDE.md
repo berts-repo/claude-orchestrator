@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repo ships two local MCP servers and a hook system that turns Claude Code into a secure, auditable orchestrator:
 
 - **delegate-web** (`web-search-mcp/`) — web search + URL fetch via Gemini, with SSRF protection and content sanitization
-- **codex-pool** (`codex-pool-mcp/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
+- **codex-delegation** (`codex-delegation-mcp/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
 
 Claude Code wires them together via hooks (`hooks/`) and session instructions (`CLAUDE.global.md`).
 
@@ -16,7 +16,7 @@ Claude Code wires them together via hooks (`hooks/`) and session instructions (`
 ```bash
 # Install dependencies
 cd web-search-mcp && npm install
-cd codex-pool-mcp && npm install
+cd codex-delegation-mcp && npm install
 
 # Apply hooks and wire settings.json (always run after modifying any hooks/*.sh)
 bash scripts/sync-hooks.sh
@@ -29,9 +29,9 @@ cd web-search-mcp && node test-search.mjs
 cd web-search-mcp && node test-security.mjs
 
 # Register MCP servers (one-time setup)
-chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js  # requires execute bit (has #!/usr/bin/env node shebang)
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js  # requires execute bit (has #!/usr/bin/env node shebang)
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 
 # View delegation logs (terminal)
 bash scripts/log-view.sh              # last 5 entries, full detail
@@ -49,7 +49,7 @@ cp slash-commands/*.md ~/.claude/commands/
 ```
 Claude Code (orchestrator)
   ├── delegate-web MCP  (web-search-mcp/server.mjs) ─── Gemini API
-  └── codex-pool MCP    (codex-pool-mcp/server.js)  ─── codex exec subprocesses
+  └── codex-delegation MCP    (codex-delegation-mcp/server.js)  ─── codex exec subprocesses
 ```
 
 Both MCP servers communicate over stdio; Claude Code spawns them as child processes.
@@ -64,7 +64,7 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 - `providers/` — pluggable search backends; active provider set via `SEARCH_PROVIDER` env var (default: `gemini`)
 - Rate limit: 30 req/min per process; output capped at 4000 chars
 
-### codex-pool-mcp
+### codex-delegation-mcp
 
 - `server.js` — MCP server exposing `codex` (single task) and `codex_parallel` (up to 10 simultaneous tasks via `Promise.all`)
 - Spawns `codex exec --ephemeral -s <sandbox>` subprocesses; sandbox modes: `read-only`, `workspace-write`, `danger-full-access`

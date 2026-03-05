@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * codex-pool-mcp — parallel Codex subprocess dispatcher
+ * codex-delegation-mcp — parallel Codex subprocess dispatcher
  *
  * Replaces the single-process `codex mcp-server` delegate.
  * Each task spawns an independent `codex exec` process; codex_parallel
@@ -254,7 +254,7 @@ function normalizeTask(task, taskLabel = "task") {
   let approvalPolicy = task["approval-policy"];
   if (task.sandbox === "danger-full-access" && approvalPolicy !== "untrusted") {
     console.warn(
-      `[codex-pool] ${taskLabel}: sandbox=danger-full-access requires approval-policy=untrusted; forcing untrusted.`
+      `[codex-delegation] ${taskLabel}: sandbox=danger-full-access requires approval-policy=untrusted; forcing untrusted.`
     );
     approvalPolicy = "untrusted";
   }
@@ -296,7 +296,7 @@ function formatParallelResults(results) {
 // ── MCP Server ─────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: "codex-pool", version: "0.1.0" },
+  { name: "codex-delegation", version: "0.1.0" },
   { capabilities: { tools: {} } }
 );
 
