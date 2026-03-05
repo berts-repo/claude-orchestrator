@@ -15,8 +15,8 @@ Claude Code wires them together via hooks (`hooks/`) and session instructions (`
 
 ```bash
 # Install dependencies
-cd web-search-mcp && npm install
-cd codex-delegation-mcp && npm install
+(cd web-search-mcp && npm install)
+(cd codex-delegation-mcp && npm install)
 
 # Apply hooks and wire settings.json (always run after modifying any hooks/*.sh)
 bash scripts/sync-hooks.sh
@@ -36,7 +36,7 @@ claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mc
 bash scripts/log-view.sh              # last 5 entries, full detail
 bash scripts/log-view.sh --list       # summary table only
 bash scripts/log-view.sh --codex 10   # last 10 Codex entries
-bash scripts/log-view.sh --gemini     # Gemini entries only
+bash scripts/log-view.sh --web         # web/Gemini entries only
 bash scripts/log-view.sh auth         # keyword filter
 
 # Install slash commands

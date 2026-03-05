@@ -5,7 +5,7 @@
 #   bash scripts/log-view.sh 10           # last 10 entries
 #   bash scripts/log-view.sh --list       # summary table only
 #   bash scripts/log-view.sh --codex      # filter: Codex only
-#   bash scripts/log-view.sh --gemini     # filter: Gemini only
+#   bash scripts/log-view.sh --web        # filter: web/Gemini only
 #   bash scripts/log-view.sh auth         # keyword filter on summary/cwd
 #   bash scripts/log-view.sh 10 --codex   # combinable
 set -euo pipefail
@@ -37,7 +37,7 @@ for arg in "$@"; do
   case "$arg" in
     --list)   LIST_ONLY=true ;;
     --codex)  TYPE_FILTER="codex" ;;
-    --gemini) TYPE_FILTER="gemini" ;;
+    --gemini|--web) TYPE_FILTER="web" ;;
     [0-9]*)   COUNT="$arg" ;;
     *)        KEYWORD="$arg" ;;
   esac
@@ -48,9 +48,12 @@ done
 fmt_ts() {
   local ts="$1"
   [[ -z "$ts" || "$ts" == "null" ]] && { echo "—"; return; }
-  if date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +"%Y-%m-%d %H:%M:%S" 2>/dev/null; then
-    return
+  # macOS: parse UTC timestamp → epoch → local time
+  local epoch
+  if epoch=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +"%s" 2>/dev/null); then
+    date -r "$epoch" +"%Y-%m-%d %H:%M:%S" 2>/dev/null && return
   fi
+  # Linux fallback
   date -d "$ts" +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "$ts"
 }
 
