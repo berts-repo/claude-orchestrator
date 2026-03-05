@@ -55,6 +55,11 @@ if [[ "$tool_name" == "Read" || "$tool_name" == "Edit" || \
 
   # Canonicalize path to prevent symlink/traversal bypasses
   # Use realpath to resolve symlinks and ../ components
+  # SEC-006 (Medium, Open): TOCTOU race in Read-mode path check.
+  # realpath -e resolves the path at hook time; the kernel opens the file later.
+  # A symlink swap between these two points could redirect to a sensitive file.
+  # Mitigation requires kernel-level enforcement (e.g. O_NOFOLLOW on open).
+  # Practical risk is low (requires local exploit timing) but not zero.
   if [[ -e "$raw_path" ]]; then
     # File exists - resolve to canonical path
     target=$(realpath -e -- "$raw_path" 2>/dev/null) || target="$raw_path"

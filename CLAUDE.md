@@ -41,6 +41,8 @@ bash scripts/log-view.sh auth         # keyword filter
 
 # Install slash commands
 cp slash-commands/*.md ~/.claude/commands/
+# Available: /delegation-log, /log-cleanup, /monitor, /summarize, /session
+# /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
 ```
 
 ## Architecture

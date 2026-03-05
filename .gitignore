@@ -1,2 +1,4 @@
-PLANS.md
 node_modules/
+**/.env
+*.log
+.SESSION.md
