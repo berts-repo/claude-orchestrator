@@ -58,6 +58,7 @@ Tools exposed:
 
 * `web_search` — queries Gemini with Google Search grounding, returns a summary and source URLs
 * `web_fetch` — fetches a URL, extracts readable content via Readability, returns Markdown or plain text
+* `web_summarize` — fetches a URL and returns a concise summary
 
 Internet access is triggered by explicit user intent:
 
@@ -67,8 +68,6 @@ Internet access is triggered by explicit user intent:
 * "do a deep dive on"
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
-
-See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, security model, and setup.
 
 ### codex-pool (Codex Subprocess Dispatcher)
 
@@ -87,8 +86,6 @@ Tools exposed:
 * `codex_parallel` — fans out up to 10 tasks simultaneously via `Promise.all`, bypassing MCP call serialization
 
 Each call is ephemeral — full task context must be provided per call. Sandboxing is handled by the Codex CLI's `--sandbox` flag.
-
-See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for architecture, parameters, and sandbox modes.
 
 ---
 
@@ -205,8 +202,6 @@ Codex CLI runs inside OS-level sandboxes (Seatbelt on macOS, Bubblewrap on Linux
 | `workspace-write` | cwd only | No | Code edits, tests, refactors |
 | `danger-full-access` | Anywhere | Yes | Package installs, git push |
 
-See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for sandbox modes, parameters, and configuration.
-
 ## Codex Delegations
 
 When Claude Code delegates tasks to Codex via MCP, significant token savings are possible by offloading high-token, low-reasoning work.
@@ -217,8 +212,6 @@ When Claude Code delegates tasks to Codex via MCP, significant token savings are
 | Code Review | ~90% |
 | Refactoring | ~85% |
 | Documentation | ~95% |
-
-See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for MCP tool reference, sandbox modes, and delegation patterns.
 
 ---
 
@@ -271,7 +264,7 @@ chmod 600 web-search-mcp/.env
 
 # 5. Register MCP servers
 chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js  # needs execute bit (shebang-based)
-claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user gemini_web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
 
 # 6. Install hooks and apply manifest wiring
@@ -282,7 +275,7 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # delegate-web and delegate should show "Connected"
+claude mcp list                # gemini_web and delegate should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/         # slash commands should be present
 
@@ -292,8 +285,6 @@ claude "search the web for MCP protocol specification"
 
 ## Setup Details
 
-- **Web Search MCP:** See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, setup, and security model.
-- **Codex Pool MCP:** See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for sandbox modes, parameters, and delegation patterns.
 - **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
 
 ---
@@ -310,8 +301,9 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 {
   "permissions": {
     "allow": [
-      "mcp__delegate-web__web_search",
-      "mcp__delegate-web__web_fetch",
+      "mcp__gemini_web__web_search",
+      "mcp__gemini_web__web_fetch",
+      "mcp__gemini_web__web_summarize",
       "mcp__delegate__codex",
       "mcp__delegate__codex_parallel"
     ],
