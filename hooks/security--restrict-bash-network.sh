@@ -26,6 +26,13 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 # - This catches tricks like c"u"rl, w''get, $(curl foo), etc.
 command="$(normalize_command "$raw_command" aggressive)"
 
+# SEC-002 (Medium, Open): Incomplete network tool coverage.
+# The following tools make network connections but are not yet blocked:
+#   git (clone, fetch, push, pull), openssl s_client/s_server, pip/pip3 install,
+#   dig, nslookup, host, curl-alternatives (httpx CLI), mosh, nc variants.
+# Mitigation requires either explicit enumeration here or a deny-by-default
+# posture (allow-list approach). Architectural change — not a quick regex fix.
+
 # Match common network client commands and programming language HTTP calls
 # Require command-token context so ".ssh" path segments do not match "ssh".
 if printf '%s\n' "$command" | grep -Eiq '(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m)([[:space:];]|$)|/dev/tcp/|python[23]?\s.*\b(requests|urllib|http\.client|aiohttp|httpx)\b|node\s.*\b(fetch|http|https|axios|got|request)\b|ruby\s.*\b(net.http|open-uri|httparty|faraday)\b|php\s.*\b(curl_exec|file_get_contents\s*\(\s*["\x27]https?)\b'; then

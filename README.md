@@ -108,6 +108,7 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a search hint before inference |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
 | `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files unconditionally |
+| `security--protect-sensitive-writes.sh` | PreToolUse (Bash, Edit, Write) | Blocks direct writes/edits/deletes against `.env*` and `.ssh` paths (except `.env.example`/`.env.template`/`.env.sample`) |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
@@ -174,12 +175,16 @@ Global slash commands are installed to `~/.claude/commands/`:
 | `/delegation-log [args]` | Browse delegation logs with full prompt/response (wraps `scripts/log-view.sh`) |
 | `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
 | `/monitor` | Dashboard showing delegation stats and security event analysis |
+| `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
+| `/session` | Capture or restore session snapshots in `.SESSION.md` |
 
 ```bash
 # Install (included in Quick Start)
 mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 ```
+
+Slash command cache files `.SESSION.md` and `.SUMMARY.md` are local/project state and are gitignored.
 
 ### Risks Mitigated
 
@@ -336,4 +341,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-05*
