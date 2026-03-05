@@ -107,7 +107,7 @@ See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for architecture, p
 |---|---|---|
 | `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
-| `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash) | Blocks reads of sensitive files when untrusted web content is loaded |
+| `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files when untrusted web content is loaded |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `gemini--require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
@@ -133,7 +133,7 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 - Pending markers are cleaned up automatically on completion
 
 **Detail files** — `~/.claude/logs/details/`
-- Codex: `codex-{epoch_ms}-{pid}.jsonl` — one entry per call
+- Codex: `{threadId}.jsonl` — one JSONL entry per turn, appended across turns of the same thread
 - Gemini: `gemini-{epoch}-{pid}.jsonl` — one entry per call
 - Auto-deleted after 30 days (time-based retention)
 
@@ -143,6 +143,19 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 - Severity mapping: destructive commands = high, network/sensitive reads = medium, blocked subagents = low
 - FIFO rotation keeps the last 200 entries
 - Run `/monitor` for a dashboard view of both delegation and security logs
+- Run `bash scripts/log-view.sh` to browse full prompt/response content from the terminal
+
+**Viewing logs** — `scripts/log-view.sh`:
+```bash
+bash scripts/log-view.sh              # last 5 entries, full prompt/response
+bash scripts/log-view.sh 20           # last 20 entries
+bash scripts/log-view.sh --list       # summary table only (no prompt/response)
+bash scripts/log-view.sh --codex      # Codex delegations only
+bash scripts/log-view.sh --gemini     # Gemini (web search/fetch) only
+bash scripts/log-view.sh auth         # keyword filter on summary/cwd
+bash scripts/log-view.sh 10 --codex   # combinable
+```
+Or use `/delegation-log [args]` inside a Claude session.
 
 **Cleanup** — run `/log-cleanup` to:
 - Remove orphaned detail files not referenced by the summary index
@@ -157,6 +170,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
+| `/delegation-log [args]` | Browse delegation logs with full prompt/response (wraps `scripts/log-view.sh`) |
 | `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
 | `/monitor` | Dashboard showing delegation stats and security event analysis |
 
@@ -186,20 +200,20 @@ Codex CLI runs inside OS-level sandboxes (Seatbelt on macOS, Bubblewrap on Linux
 | `workspace-write` | cwd only | No | Code edits, tests, refactors |
 | `danger-full-access` | Anywhere | Yes | Package installs, git push |
 
-See **[docs/README.md](docs/README.md)** for sandbox configuration, custom profiles, and verification tests.
+See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for sandbox modes, parameters, and configuration.
 
 ## Codex Delegations
 
 When Claude Code delegates tasks to Codex via MCP, significant token savings are possible by offloading high-token, low-reasoning work.
 
-| Delegation Type | Token Savings | Guide |
-|---|---|---|
-| Test Generation | ~97% | [test-generation.md](docs/delegations/test-generation.md) |
-| Code Review | ~90% | [code-review.md](docs/delegations/code-review.md) |
-| Refactoring | ~85% | [refactoring.md](docs/delegations/refactoring.md) |
-| Documentation | ~95% | [documentation.md](docs/delegations/documentation.md) |
+| Delegation Type | Estimated Token Savings |
+|---|---|
+| Test Generation | ~97% |
+| Code Review | ~90% |
+| Refactoring | ~85% |
+| Documentation | ~95% |
 
-See **[docs/delegations/README.md](docs/delegations/README.md)** for MCP tool reference and delegation patterns.
+See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for MCP tool reference, sandbox modes, and delegation patterns.
 
 ---
 
@@ -237,6 +251,7 @@ cd ~/git/claude-orchestrator
 # Option A: Global — applies to all projects
 cp CLAUDE.global.md ~/.claude/CLAUDE.md
 # Option B: Project-scoped — applies only when working in this repo
+# WARNING: This overwrites the existing project CLAUDE.md
 cp CLAUDE.global.md CLAUDE.md
 
 # 3. Install dependencies for both MCP servers
@@ -250,6 +265,7 @@ chmod 600 web-search-mcp/.env
 # Edit .env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers
+chmod +x ~/git/claude-orchestrator/codex-pool-mcp/server.js  # needs execute bit (shebang-based)
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-pool-mcp/server.js
 
@@ -272,8 +288,7 @@ claude "search the web for MCP protocol specification"
 ## Setup Details
 
 - **Web Search MCP:** See **[web-search-mcp/README.md](web-search-mcp/README.md)** for architecture, setup, and security model.
-- **Codex Sandbox:** See **[docs/README.md](docs/README.md)** for sandbox configuration.
-- **Codex Delegations:** See **[docs/delegations/README.md](docs/delegations/README.md)** for delegation patterns.
+- **Codex Pool MCP:** See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for sandbox modes, parameters, and delegation patterns.
 - **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
 
 ---
@@ -309,16 +324,6 @@ When multiple MCP calls are in a single message, rejecting the first cancels the
 | `~/.claude/settings.json` | Hooks, security settings, status line |
 | `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask lists) |
 | `.mcp.json` (project root) | Project-scoped MCP servers |
-
-### Full hooks configuration
-
-Hook registration is managed via frontmatter headers in each `hooks/*.sh` file. Run `bash scripts/sync-hooks.sh` to apply — it discovers the headers, writes `~/.claude/settings.json`, and creates symlinks in `~/.claude/hooks/`. No manual JSON editing required.
-
-To add a new hook:
-1. Ask Codex to create the `.sh` file with the required frontmatter (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`)
-2. Run `bash scripts/sync-hooks.sh` to apply
-
-> **Note:** Never ask Codex to touch `~/.claude/` directly — it is blocked by AGENTS.md security rules. `sync-hooks.sh` is the bridge.
 
 ---
 
