@@ -91,12 +91,9 @@ web-search-mcp/
 ├── README.md                    # This file
 ├── server.mjs                   # Main server — registers search and fetch tools
 ├── start.sh                     # Launcher — resolves API key, starts node
-├── test-search.mjs              # Standalone test (bypasses MCP transport)
 ├── test-security.mjs            # Unit tests for SSRF and sanitization fixes
 ├── package.json                 # Dependencies
 ├── package-lock.json            # Lockfile
-├── .gitignore                   # Ignores .env, node_modules, logs
-├── .env                         # API key (gitignored, create locally)
 ├── lib/
 │   ├── cache.mjs                # In-memory LRU cache with TTL
 │   ├── fetcher.mjs              # SSRF-safe HTTP fetcher for fetch
@@ -185,35 +182,7 @@ chmod 600 ~/git/claude-orchestrator/web-search-mcp/.env
 
 > **Note:** `.env` is loaded after the env var and keyring checks. Variables already set in the environment take precedence.
 
-### Step 4 — Test Standalone
-
-This test calls the Gemini API directly, bypassing MCP transport, to confirm your key and network work:
-
-```bash
-cd ~/git/claude-orchestrator/web-search-mcp
-GEMINI_API_KEY="your-key" node test-search.mjs "latest Node.js release"
-```
-
-Expected output:
-
-```
-Testing Gemini web search grounding
-  Model: gemini-2.5-flash
-  Query: latest Node.js release
-
---- Response ---
-(a paragraph summarizing search results)
-
---- Grounding Sources ---
-  Title — https://...
-  Title — https://...
-
-PASS
-```
-
-If you see `PASS`, the Gemini integration works. If it fails, check your API key and network.
-
-### Step 5 — Register with Claude Code
+### Step 4 — Register with Claude Code
 
 **Option A: CLI (recommended)**
 
@@ -244,7 +213,7 @@ claude mcp list
 # delegate-web: ... - ✓ Connected
 ```
 
-### Step 6 — Install Hooks
+### Step 5 — Install Hooks
 
 Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). From the repo root, run:
 
@@ -254,7 +223,7 @@ bash scripts/sync-hooks.sh
 
 This updates both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` wiring. Never manually edit `~/.claude/settings.json` for hook wiring.
 
-### Step 7 — Verify End-to-End
+### Step 6 — Verify End-to-End
 
 Open a new Claude Code session:
 
@@ -494,18 +463,6 @@ secret-tool lookup service mcp-delegate-web account api-key
 # Check .env file
 cat ~/git/claude-orchestrator/web-search-mcp/.env
 ```
-
-### Test script shows FAIL
-
-Run with debug output:
-```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/web-search-mcp/test-search.mjs "test query"
-```
-
-Common causes:
-- Invalid API key
-- Network/firewall blocking Google API
-- Gemini quota exceeded (free tier: 15 req/min)
 
 ### Claude doesn't use search
 
