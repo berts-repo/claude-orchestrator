@@ -23,7 +23,7 @@ Blocks reads of sensitive files to prevent credential exfiltration:
 
 **Type:** PreToolUse (Bash)
 
-Blocks Bash commands that make direct network connections. Forces all web access through the `web_search` MCP tool.
+Blocks Bash commands that make direct network connections. Forces all web access through the `search` MCP tool.
 
 Blocked commands:
 - `curl`, `wget`, `nc`, `ncat`, `nmap`, `socat`

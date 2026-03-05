@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook
 # Detects prompts that imply time-sensitive information needs and injects
-# context directing Claude to use web_search proactively — before any inference.
+# context directing Claude to use search proactively — before any inference.
 # Replaces the Stop-hook approach (gemini--require-web-if-recency.sh) which
 # fired too late: tokens were already spent on a response that needed retrying.
 # HOOK_EVENT: UserPromptSubmit
@@ -31,7 +31,7 @@ just\s+(released|announced|launched|shipped|published)|
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "This prompt asks about time-sensitive or current state information. Use the web_search MCP tool first to retrieve current data before responding. Cite all source URLs returned by the tool."
+    "additionalContext": "This prompt asks about time-sensitive or current state information. Use the search MCP tool first to retrieve current data before responding. Cite all source URLs returned by the tool."
   }
 }
 EOF

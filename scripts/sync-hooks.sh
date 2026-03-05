@@ -54,7 +54,7 @@ $DRY_RUN && echo "    (dry run)"
 $CHECK_ONLY && echo "    (check only)"
 echo
 
-tmp_entries="$(mktemp)"
+tmp_entries="$(mktemp "${TMPDIR:-/tmp}/sync-hooks.XXXXXX")"
 trap 'rm -f "$tmp_entries"' EXIT
 
 declare -a hook_scripts=()
@@ -192,7 +192,7 @@ if $DRY_RUN; then
   echo "$new_hooks" | jq .
 else
   if [[ -f "$SETTINGS" ]]; then
-    tmp_settings="$(mktemp)"
+    tmp_settings="$(mktemp "${TMPDIR:-/tmp}/sync-hooks.XXXXXX")"
     jq --argjson h "$new_hooks" '.hooks = $h' "$SETTINGS" > "$tmp_settings"
     mv "$tmp_settings" "$SETTINGS"
     echo "  updated $SETTINGS"

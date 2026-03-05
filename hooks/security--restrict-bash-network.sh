@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher: Bash)
 # Blocks Bash commands that make direct network connections.
-# Forces all web access through the web_search MCP tool.
+# Forces all web access through the search MCP tool.
 # HOOK_EVENT: PreToolUse
 # HOOK_MATCHER: Bash
 # HOOK_TIMEOUT: 5
@@ -36,7 +36,7 @@ if printf '%s\n' "$command" | grep -Eiq '(^|[;&|()[:space:]])([[:alnum:]_./-]*/)
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "Direct network access via Bash is restricted. Use the web_search MCP tool for internet access."
+    "permissionDecisionReason": "Direct network access via Bash is restricted. Use the search MCP tool for internet access."
   }
 }
 EOF

@@ -71,7 +71,7 @@ const server = new McpServer(
 );
 
 server.registerTool(
-  "web_search",
+  "search",
   {
     description:
       "Search the web and return a summary with source URLs. Use only when the user explicitly requests web/internet information.",
@@ -101,7 +101,7 @@ server.registerTool(
     if (!rateLimiter.check()) {
       log.warn("Rate limit exceeded");
       return {
-        content: [{ type: "text", text: "[web_search error: rate limit exceeded, try again later]" }],
+        content: [{ type: "text", text: "[search error: rate limit exceeded, try again later]" }],
         isError: true,
       };
     }
@@ -110,7 +110,7 @@ server.registerTool(
     const cleanQuery = sanitizeQuery(query, MAX_QUERY_LENGTH);
     if (!cleanQuery) {
       return {
-        content: [{ type: "text", text: "[web_search error: query was empty after sanitization]" }],
+        content: [{ type: "text", text: "[search error: query was empty after sanitization]" }],
         isError: true,
       };
     }
@@ -118,7 +118,7 @@ server.registerTool(
     if (INJECTION_PATTERNS.test(cleanQuery)) {
       log.warn("Injection pattern detected in query", { query: cleanQuery.slice(0, 100) });
       return {
-        content: [{ type: "text", text: "[web_search error: query rejected by content filter]" }],
+        content: [{ type: "text", text: "[search error: query rejected by content filter]" }],
         isError: true,
       };
     }
@@ -129,7 +129,7 @@ server.registerTool(
         activeProvider = getProvider(requestedProvider);
       } catch (err) {
         return {
-          content: [{ type: "text", text: `[web_search error: ${err.message.slice(0, 200)}]` }],
+          content: [{ type: "text", text: `[search error: ${err.message.slice(0, 200)}]` }],
           isError: true,
         };
       }
@@ -143,7 +143,7 @@ server.registerTool(
       return cached;
     }
 
-    log.info("web_search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
+    log.info("search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
 
     try {
       const { summary, sources, notice } = await activeProvider.search(cleanQuery, max_results);
@@ -170,7 +170,7 @@ server.registerTool(
         "--- END UNTRUSTED WEB CONTENT ---",
       ].join("\n");
 
-      log.info("web_search completed", {
+      log.info("search completed", {
         query: cleanQuery.slice(0, 60),
         responseLength: cleanSummary.length,
         sourceCount: cleanSources.length,
@@ -184,19 +184,19 @@ server.registerTool(
       return result;
     } catch (err) {
       const message = err?.message || String(err);
-      log.error("web_search failed", { error: message });
+      log.error("search failed", { error: message });
 
       let userMessage;
       if (message.includes("API_KEY")) {
-        userMessage = "[web_search error: authentication failed]";
+        userMessage = "[search error: authentication failed]";
       } else if (message.includes("429") || message.includes("quota") || message.includes("rate")) {
-        userMessage = "[web_search error: rate limit exceeded, try again later]";
+        userMessage = "[search error: rate limit exceeded, try again later]";
       } else if (message.includes("timeout") || message.includes("aborted") || message.includes("DEADLINE")) {
-        userMessage = "[web_search error: request timed out]";
+        userMessage = "[search error: request timed out]";
       } else if (message.includes("SAFETY") || message.includes("blocked")) {
-        userMessage = "[web_search error: query blocked by safety filters]";
+        userMessage = "[search error: query blocked by safety filters]";
       } else {
-        userMessage = `[web_search error: ${message.slice(0, 200)}]`;
+        userMessage = `[search error: ${message.slice(0, 200)}]`;
       }
 
       return {
@@ -208,7 +208,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "web_fetch",
+  "fetch",
   {
     description: "Fetch a URL and return its main content as Markdown. For reading web pages, docs, or articles. Returns untrusted external content.",
     inputSchema: {
@@ -220,7 +220,7 @@ server.registerTool(
     if (!rateLimiter.check()) {
       log.warn("Rate limit exceeded");
       return {
-        content: [{ type: "text", text: "[web_fetch error: rate limit exceeded, try again later]" }],
+        content: [{ type: "text", text: "[fetch error: rate limit exceeded, try again later]" }],
         isError: true,
       };
     }
@@ -260,24 +260,24 @@ server.registerTool(
       const message = err?.message || String(err);
       if (err?.code === "ERR_URL_NOT_ALLOWED") {
         return {
-          content: [{ type: "text", text: "[web_fetch error: URL not allowed]" }],
+          content: [{ type: "text", text: "[fetch error: URL not allowed]" }],
           isError: true,
         };
       }
       if (err?.code === "ERR_TIMEOUT" || message.includes("timed out") || message.includes("AbortError")) {
         return {
-          content: [{ type: "text", text: "[web_fetch error: request timed out]" }],
+          content: [{ type: "text", text: "[fetch error: request timed out]" }],
           isError: true,
         };
       }
       if (err?.code === "ERR_UNSUPPORTED_CONTENT_TYPE") {
         return {
-          content: [{ type: "text", text: "[web_fetch error: unsupported content type]" }],
+          content: [{ type: "text", text: "[fetch error: unsupported content type]" }],
           isError: true,
         };
       }
       return {
-        content: [{ type: "text", text: `[web_fetch error: ${message.slice(0, 200)}]` }],
+        content: [{ type: "text", text: `[fetch error: ${message.slice(0, 200)}]` }],
         isError: true,
       };
     }
@@ -325,7 +325,7 @@ server.registerResource(
       text: JSON.stringify({
         activeProvider: provider.getName(),
         availableProviders: listProviders().map((p) => ({ name: p.name, available: p.available })),
-        tools: ["web_search", "web_fetch"],
+        tools: ["search", "fetch"],
       }),
     }],
   }),

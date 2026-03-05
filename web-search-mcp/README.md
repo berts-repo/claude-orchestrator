@@ -1,17 +1,17 @@
 # Web Search MCP Server
 
-MCP server (registered as `delegate-web`) exposing `web_search` and `web_fetch` tools. Default search provider: Gemini API with Google Search grounding.
+MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Default search provider: Gemini API with Google Search grounding.
 
 ## Overview
 
 This server provides Claude Code with internet access through a controlled, auditable channel. When users explicitly request web searches ("search the web for...", "do research on..."), Claude calls this MCP tool instead of using curl/wget directly.
 
 Key features:
-- **Two tools** — `web_search` (Gemini-grounded search) and `web_fetch` (URL fetch + Readability extraction)
+- **Two tools** — `search` (Gemini-grounded search) and `fetch` (URL fetch + Readability extraction)
 - **Pluggable providers** — swap search backends via `SEARCH_PROVIDER` env var (default: `gemini`)
 - **Google Search grounding** — Gemini performs actual Google searches and grounds responses in results
 - **Source attribution** — Every search response includes source URLs for citation
-- **SSRF protection** — `web_fetch` blocks localhost, private IPs, link-local, and metadata endpoints
+- **SSRF protection** — `fetch` blocks localhost, private IPs, link-local, and metadata endpoints
 - **Input/output sanitization** — Blocks injection patterns, strips HTML/scripts from results
 - **Rate limiting** — 30 requests/minute with in-memory caching (5-min TTL)
 - **Untrust markers** — All web content is wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
@@ -46,6 +46,7 @@ User prompt: "Search the web for latest Node.js release"
 ```
 
 Communication between Claude Code and this server uses **stdio** (stdin/stdout JSON-RPC), not HTTP. Claude Code spawns the server as a child process.
+Name mapping note: register this MCP server as `delegate-web`; in hook/tool matcher names it is exposed under `delegate_web` (`mcp__delegate_web__*`).
 
 ## Security Model
 
@@ -69,9 +70,8 @@ Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protec
 | Untrust markers | Server | Wraps all web content with clear markers |
 | Rate limiting | Server | 30 req/min prevents abuse |
 | `security--restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
-| `gemini--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use web_search" context |
-| `gemini--require-web-if-recency.sh` | Hook | Blocks recency claims without source URLs |
-| `codex--enforce-code-write.sh` | Hook | Blocks direct large code file creation; enforces Codex delegation |
+| `gemini--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use search" context |
+| `gemini--preempt-recency-queries.sh` | Hook | Detects time-sensitive prompts and injects a search hint before inference |
 
 ### Trust Boundaries
 
@@ -89,7 +89,7 @@ MCP tool interface               │  Any content after "BEGIN UNTRUSTED"
 ```
 web-search-mcp/
 ├── README.md                    # This file
-├── server.mjs                   # Main server — registers web_search and web_fetch tools
+├── server.mjs                   # Main server — registers search and fetch tools
 ├── start.sh                     # Launcher — resolves API key, starts node
 ├── test-search.mjs              # Standalone test (bypasses MCP transport)
 ├── test-security.mjs            # Unit tests for SSRF and sanitization fixes
@@ -99,7 +99,7 @@ web-search-mcp/
 ├── .env                         # API key (gitignored, create locally)
 ├── lib/
 │   ├── cache.mjs                # In-memory LRU cache with TTL
-│   ├── fetcher.mjs              # SSRF-safe HTTP fetcher for web_fetch
+│   ├── fetcher.mjs              # SSRF-safe HTTP fetcher for fetch
 │   ├── sanitize.mjs             # Input/output sanitization and injection detection
 │   └── logger.mjs               # Structured JSON logger (stderr only)
 └── providers/
@@ -109,9 +109,8 @@ web-search-mcp/
     └── brave-provider.mjs       # Brave Search API implementation
 ../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
     ├── gemini--inject-web-search-hint.sh
-    ├── codex--enforce-code-write.sh
     ├── security--restrict-bash-network.sh
-    └── gemini--require-web-if-recency.sh
+    └── gemini--preempt-recency-queries.sh
 ```
 
 ---
@@ -272,11 +271,11 @@ Search the web for the latest news about AI
 
 What should happen:
 1. The `gemini--inject-web-search-hint.sh` hook detects "search the web" and injects context
-2. Claude calls the `web_search` MCP tool
+2. Claude calls the `search` MCP tool
 3. The MCP server queries Gemini with Google Search grounding
 4. Claude receives the results wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
 5. Claude synthesizes an answer and cites sources with URLs
-6. The `gemini--require-web-if-recency.sh` stop hook confirms sources are present
+6. For time-sensitive prompts, `gemini--preempt-recency-queries.sh` injects a pre-inference search hint
 
 ---
 
@@ -286,7 +285,7 @@ What should happen:
 
 The server uses the Model Context Protocol over **stdio** (standard input/output). There are no ports or HTTP — Claude Code launches the server as a child process and communicates via JSON-RPC messages over stdin/stdout.
 
-The server registers two tools (`web_search`, `web_fetch`) and two resources (`search://cache/stats`, `search://config`), described below.
+The server registers two tools (`search`, `fetch`) and two resources (`search://cache/stats`, `search://config`), described below.
 
 1. **Rate limits** — 30 requests per 60 seconds (in-memory counter)
 2. **Sanitizes the query** — strips control characters, HTML tags, collapses whitespace, caps at 500 characters
@@ -343,7 +342,7 @@ Structured JSON logger that writes to **stderr only** (stdout is reserved for MC
 
 ## MCP Tool Interface
 
-### `web_search`
+### `search`
 
 Search the web and return grounded results with source URLs.
 
@@ -365,7 +364,7 @@ Sources:
 --- END UNTRUSTED WEB CONTENT ---
 ```
 
-### `web_fetch`
+### `fetch`
 
 Fetch a URL and return its main content as Markdown or plain text. Uses Mozilla Readability to extract the article body and strips navigation, ads, and boilerplate.
 
@@ -400,7 +399,7 @@ scalable network applications...
 
 MCP has three kinds of things a server can expose:
 
-- **Tools** — actions a client *calls* (like a function). Your `web_search` is a tool.
+- **Tools** — actions a client *calls* (like a function). Your `search` is a tool.
 - **Prompts** — templates a client can *retrieve and inject* into a conversation.
 - **Resources** — data a client can *read* at a URI, like fetching a URL.
 
@@ -508,7 +507,7 @@ Common causes:
 - Network/firewall blocking Google API
 - Gemini quota exceeded (free tier: 15 req/min)
 
-### Claude doesn't use web_search
+### Claude doesn't use search
 
 1. Check MCP registration: `claude mcp list` — `delegate-web` should appear
 2. Re-run hook sync from repo root: `bash scripts/sync-hooks.sh`

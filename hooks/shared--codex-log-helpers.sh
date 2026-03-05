@@ -19,7 +19,7 @@ codex_log_tool_type() {
   local tool_name="$1"
   case "$tool_name" in
     mcp__delegate__codex|mcp__delegate__codex_parallel) echo "codex" ;;
-    mcp__gemini_web__web_search|mcp__gemini_web__web_fetch|mcp__gemini_web__web_summarize) echo "gemini" ;;
+    mcp__delegate_web__search|mcp__delegate_web__fetch) echo "gemini" ;;
     *) echo "" ;;
   esac
 }
