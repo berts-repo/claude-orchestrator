@@ -109,7 +109,12 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
     ];
 
     const env = {
-      ...process.env,
+      ...Object.fromEntries(
+        ["PATH", "HOME", "USER", "TMPDIR", "TERM", "LANG", "LC_ALL",
+         "OPENAI_API_KEY", "CODEX_BIN", "CODEX_POOL_TIMEOUT_MS"]
+          .filter((k) => process.env[k] !== undefined)
+          .map((k) => [k, process.env[k]])
+      ),
       ...(apiKey ? { OPENAI_API_KEY: apiKey } : {}),
     };
 
@@ -117,7 +122,9 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
+    proc.unref();
 
     let stdout = "";
     let stderr = "";
@@ -130,10 +137,18 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
 
     let forceKillTimer;
     const terminateProcess = () => {
-      if (proc.exitCode === null) proc.kill("SIGTERM");
+      if (proc.exitCode === null) {
+        try {
+          process.kill(-proc.pid, "SIGTERM");
+        } catch {}
+      }
       if (!forceKillTimer) {
         forceKillTimer = setTimeout(() => {
-          if (proc.exitCode === null) proc.kill("SIGKILL");
+          if (proc.exitCode === null) {
+            try {
+              process.kill(-proc.pid, "SIGKILL");
+            } catch {}
+          }
         }, FORCE_KILL_DELAY_MS);
       }
     };

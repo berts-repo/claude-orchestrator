@@ -107,7 +107,7 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use search" context |
 | `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a search hint before inference |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
-| `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files when untrusted web content is loaded |
+| `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files unconditionally |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
