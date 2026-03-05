@@ -29,15 +29,24 @@ deny() {
   exit 0
 }
 
-case "$subagent" in
-  explore)
-    deny "Explore subagent is blocked. Use mcp__delegate__codex with sandbox: read-only instead." ;;
-  test_gen|test-gen)
-    deny "test_gen subagent is blocked. Use mcp__delegate__codex with sandbox: workspace-write instead." ;;
-  doc_comments|doc-comments)
-    deny "doc_comments subagent is blocked. Use mcp__delegate__codex with sandbox: workspace-write instead." ;;
-  diff_digest|diff-digest)
-    deny "diff_digest subagent is blocked. Use mcp__delegate__codex with sandbox: read-only instead." ;;
-esac
+# Load blocked list from blocked-subagents.conf (same directory as this script)
+CONF_FILE="$SCRIPT_DIR/blocked-subagents.conf"
+
+if [[ -f "$CONF_FILE" ]]; then
+  # Normalise incoming subagent: lowercase, replace hyphens with underscores
+  normalised_subagent="${subagent//-/_}"
+  while IFS= read -r line; do
+    # Skip comments and blank lines
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    name="${line%%:*}"
+    sandbox="${line#*:}"
+    # Normalise config entry the same way
+    normalised_name="${name//-/_}"
+    normalised_name="$(printf '%s' "$normalised_name" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    if [[ "$normalised_subagent" == "$normalised_name" ]]; then
+      deny "${name} subagent is blocked. Use mcp__delegate__codex with sandbox: ${sandbox} instead."
+    fi
+  done < "$CONF_FILE"
+fi
 
 exit 0

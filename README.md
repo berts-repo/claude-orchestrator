@@ -103,20 +103,25 @@ See **[codex-pool-mcp/README.md](codex-pool-mcp/README.md)** for architecture, p
 
 ### Hooks
 
+Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit`), not after a failed response/retry.
+
 | Hook | Event | Purpose |
 |---|---|---|
 | `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use web_search" context |
+| `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a web_search hint before inference |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
 | `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files when untrusted web content is loaded |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
-| `gemini--require-web-if-recency.sh` | Stop | Blocks responses with recency claims but no source URLs |
-| `codex--inject-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks and injects Codex guidance |
+| `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
 | `codex--enforce-code-write.sh` | PreToolUse (Write) | Blocks direct creation of substantial new code files (≥25 lines); requires Codex delegation |
-| `codex--block-subagents.sh` | PreToolUse (Task) | Blocks Explore, test_gen, doc_comments, diff_digest subagents — use Codex instead |
+| `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
 | `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Records start time for duration tracking |
 | `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__gemini_web__web_search, mcp__gemini_web__web_fetch, mcp__gemini_web__web_summarize) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `shared--codex-log-helpers.sh` | (helper) | Codex logging helpers; `codex_log_correlation_key` hashes the full prompt to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
+
+To block an additional Task subagent type, add a line in `hooks/blocked-subagents.conf` and run `bash scripts/sync-hooks.sh`.
 
 ### Audit Logging
 
