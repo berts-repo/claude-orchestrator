@@ -262,9 +262,9 @@ function normalizeTask(task, taskLabel = "task") {
   }
 
   const homeDepth = getHomeDepth(normalizedCwd);
-  if (homeDepth !== null && homeDepth < 2) {
+  if (task.sandbox === "workspace-write" && homeDepth !== null && homeDepth < 0) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. For workspace-write safety, cwd under '${USER_HOME}' must be at least 2 path components below home (example allowed: '${USER_HOME}/Git/myproject').`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. For workspace-write safety, cwd under '${USER_HOME}' must be at or below home.`
     );
   }
 
