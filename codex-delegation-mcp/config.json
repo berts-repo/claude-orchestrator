@@ -1,0 +1,16 @@
+{
+  "allowedRoots": [
+    "~/Git",
+    "~/Projects"
+  ],
+  "blockedPaths": [
+    "/",
+    "/etc",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/System",
+    "/Library"
+  ]
+}

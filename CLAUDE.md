@@ -68,9 +68,11 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 ### codex-delegation-mcp
 
 - `server.js` — MCP server exposing `codex` (single task) and `codex_parallel` (up to 10 simultaneous tasks via `Promise.all`)
+- `config.json` — allowed/blocked cwd paths (edit this to add or remove roots); missing file warns and falls back to defaults
 - Spawns `codex exec --ephemeral -s <sandbox>` subprocesses; sandbox modes: `read-only`, `workspace-write`, `danger-full-access`
 - Timeout: 5 min default (`CODEX_POOL_TIMEOUT_MS`); output capped at 2 MB
 - API key: reads `OPENAI_API_KEY` env or `~/.codex/auth.json`
+- `CODEX_POOL_ALLOWED_CWD_ROOTS` env var extends (adds to) `config.json` allowed roots
 
 ### Hooks system
 
