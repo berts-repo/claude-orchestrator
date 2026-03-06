@@ -25,6 +25,7 @@ import { spawn } from "child_process";
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import { z } from "zod";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
@@ -32,12 +33,56 @@ const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs >
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const USER_HOME = path.resolve(process.env.HOME ?? homedir());
-const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"];
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = path.resolve(MODULE_DIR, "config.json");
+const DEFAULT_CONFIG = {
+  allowedRoots: [USER_HOME],
+  blockedPaths: ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"],
+};
+
+function expandHomePath(targetPath) {
+  if (targetPath === "~") return USER_HOME;
+  if (targetPath.startsWith("~/")) return path.resolve(USER_HOME, targetPath.slice(2));
+  return targetPath;
+}
+
+function loadConfig() {
+  let rawConfig;
+  try {
+    rawConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+      console.warn(
+        `[codex-delegation] Missing config file at '${CONFIG_PATH}'. Falling back to default cwd policy.`
+      );
+      return DEFAULT_CONFIG;
+    }
+    throw err;
+  }
+
+  const allowedRoots = Array.isArray(rawConfig.allowedRoots)
+    ? rawConfig.allowedRoots
+    : DEFAULT_CONFIG.allowedRoots;
+  const blockedPaths = Array.isArray(rawConfig.blockedPaths)
+    ? rawConfig.blockedPaths
+    : DEFAULT_CONFIG.blockedPaths;
+
+  return {
+    allowedRoots: allowedRoots
+      .filter((targetPath) => typeof targetPath === "string" && targetPath.trim())
+      .map((targetPath) => path.resolve(expandHomePath(targetPath.trim()))),
+    blockedPaths: blockedPaths
+      .filter((targetPath) => typeof targetPath === "string" && targetPath.trim())
+      .map((targetPath) => path.resolve(expandHomePath(targetPath.trim()))),
+  };
+}
+
+const config = loadConfig();
 
 function parseAllowedCwdRoots() {
   const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
-  const defaultRoots = USER_HOME ? [USER_HOME] : [];
-  const roots = (configured ? configured.split(",") : defaultRoots)
+  const defaultRoots = config.allowedRoots;
+  const roots = [...defaultRoots, ...(configured ? configured.split(",") : [])]
     .map((root) => root.trim())
     .filter(Boolean)
     .filter((root) => path.isAbsolute(root))
@@ -230,13 +275,6 @@ function isWithinRoot(targetPath, rootPath) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
-function getHomeDepth(targetPath) {
-  if (!USER_HOME || !isWithinRoot(targetPath, USER_HOME)) return null;
-  const rel = path.relative(USER_HOME, targetPath);
-  if (!rel) return 0;
-  return rel.split(path.sep).filter(Boolean).length;
-}
-
 function normalizeTask(task, taskLabel = "task") {
   if (!path.isAbsolute(task.cwd)) {
     throw new Error(
@@ -245,12 +283,12 @@ function normalizeTask(task, taskLabel = "task") {
   }
 
   const normalizedCwd = path.resolve(task.cwd);
-  const blockedRoot = BLOCKED_CWD_ROOTS.find(
+  const blockedRoot = config.blockedPaths.find(
     (blocked) => normalizedCwd === blocked || normalizedCwd.startsWith(`${blocked}/`)
   );
   if (blockedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. Root/system directory '${blockedRoot}' is not allowed.`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (codex-delegation-mcp/config.json).`
     );
   }
 
@@ -258,13 +296,6 @@ function normalizeTask(task, taskLabel = "task") {
   if (!inAllowedRoot) {
     throw new Error(
       `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED_CWD_ROOTS (current: ${ALLOWED_CWD_ROOTS.join(", ")}).`
-    );
-  }
-
-  const homeDepth = getHomeDepth(normalizedCwd);
-  if (homeDepth !== null && homeDepth < 2) {
-    throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. For workspace-write safety, cwd under '${USER_HOME}' must be at least 2 path components below home (example allowed: '${USER_HOME}/Git/myproject').`
     );
   }
 
