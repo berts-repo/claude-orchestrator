@@ -299,6 +299,7 @@ function normalizeTask(task, taskLabel = "task") {
     );
   }
 
+
   let approvalPolicy = task["approval-policy"];
   if (task.sandbox === "danger-full-access" && approvalPolicy !== "untrusted") {
     console.warn(
