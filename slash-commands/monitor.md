@@ -56,3 +56,14 @@ Format the report with markdown tables where appropriate. Keep it concise — th
 ---
 
 After Codex returns, display the report verbatim.
+
+### Delegation Activity
+Query `~/.claude/delegation.db` for recent activity:
+- Last 10 tasks: `project`, `prompt_slug`, `status`, `duration_ms`, `started_at`
+- Any currently running tasks (`status = 'running'`)
+- Failure rate summary by project (last 7 days)
+
+Use:
+- `sqlite3 ~/.claude/delegation.db "SELECT ..."`
+
+If DB does not exist, skip this section silently.
