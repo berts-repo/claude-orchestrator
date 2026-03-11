@@ -14,9 +14,11 @@ Claude Code wires them together via hooks (`hooks/`) and session instructions (`
 ## Commands
 
 ```bash
-# Install dependencies
-(cd web-search-mcp && npm install)
-(cd codex-delegation-mcp && npm install)
+# First-time setup (idempotent — safe to re-run)
+bash scripts/setup.sh
+
+# Uninstall
+bash scripts/uninstall.sh
 
 # Apply hooks and wire settings.json (always run after modifying any hooks/*.sh)
 bash scripts/sync-hooks.sh
@@ -26,11 +28,6 @@ bash scripts/sync-hooks.sh --check
 
 # Test web-search-mcp
 cd web-search-mcp && node test-security.mjs
-
-# Register MCP servers (one-time setup)
-chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js  # requires execute bit (has #!/usr/bin/env node shebang)
-claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 
 # View delegation logs (terminal)
 bash scripts/log-view.sh              # last 5 entries, full detail
