@@ -21,11 +21,26 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
+import { createHash, randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { z } from "zod";
+import {
+  autoTag,
+  cleanBatchStatus,
+  completeBatch,
+  getConfig,
+  insertBatch,
+  insertTask,
+  redact,
+  shouldStoreFullOutput,
+  shouldStoreFullPrompt,
+  updateTask,
+  upsertSession,
+  writeBatchStatus,
+} from "./db.js";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
@@ -33,6 +48,8 @@ const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const USER_HOME = path.resolve(process.env.HOME ?? homedir());
 const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"];
+const SESSION_ID = randomUUID();
+let sessionInitialized = false;
 
 function parseAllowedCwdRoots() {
   const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
@@ -47,6 +64,52 @@ function parseAllowedCwdRoots() {
 }
 
 const ALLOWED_CWD_ROOTS = parseAllowedCwdRoots();
+
+function logDbError(context, error) {
+  console.warn(`[codex-delegation] ${context}: ${error.message}`);
+}
+
+function ensureSession(model) {
+  if (sessionInitialized) return;
+  try {
+    upsertSession(SESSION_ID, model);
+    sessionInitialized = true;
+  } catch (error) {
+    logDbError("session init failed", error);
+  }
+}
+
+function toPromptSlug(prompt) {
+  return prompt.replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+function toPromptHash(prompt) {
+  return createHash("sha256").update(prompt).digest("hex");
+}
+
+function toFailureReason(result) {
+  if (result.timedOut) return "timeout";
+  if (result.outputCapped) return "output_capped";
+  if (result.spawnError) return "spawn_error";
+  if (result.exitCode !== 0) return "exit_nonzero";
+  return null;
+}
+
+function toStoredOutput(result) {
+  const merged = [result.stdoutText ?? "", result.stderrText ?? ""].filter(Boolean).join("\n");
+  return merged.slice(0, 2048);
+}
+
+function toStoredError(result) {
+  return (result.stderrText ?? result.error ?? "").slice(0, 2048);
+}
+
+function isGitRepository(cwd) {
+  const result = spawnSync("git", ["-C", cwd, "rev-parse", "--git-dir"], {
+    stdio: "ignore",
+  });
+  return result.status === 0;
+}
 
 // Resolve API key: env var first, then ~/.codex/auth.json (where Codex stores it)
 function resolveApiKey() {
@@ -85,7 +148,7 @@ const ParallelSchema = z.object({
  * Run a single Codex task as a local subprocess.
  * Resolves with { success, output, exitCode } when the process exits.
  */
-function runCodexContainer(task, index = 0, batchStart = Date.now()) {
+function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {}) {
   return new Promise((resolve) => {
     const {
       prompt,
@@ -100,13 +163,15 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
     const apiKey = resolveApiKey();
 
     const codexBin = process.env.CODEX_BIN ?? "codex";
+    const shouldSkipGitRepoCheck = task["skip-git-repo-check"] || !isGitRepository(cwd);
+
     const codexArgs = [
       "exec", "--ephemeral",
       "-s", sandbox,
       ...(approvalPolicy ? ["-c", `approval_policy=${approvalPolicy}`] : []),
       ...(model ? ["-m", model] : []),
       ...(baseInstructions ? ["-c", `instructions=${JSON.stringify(baseInstructions)}`] : []),
-      ...(task["skip-git-repo-check"] ? ["--skip-git-repo-check"] : []),
+      ...(shouldSkipGitRepoCheck ? ["--skip-git-repo-check"] : []),
       prompt,
     ];
 
@@ -127,6 +192,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
       detached: true,
     });
     proc.unref();
+    hooks.onStart?.({ index, startedAt });
 
     let stdout = "";
     let stderr = "";
@@ -205,6 +271,13 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
         startedAt,
         finishedAt: Date.now(),
         batchStart,
+        timedOut,
+        outputCapped,
+        stdoutBytes,
+        stderrBytes,
+        stdoutText: stdout,
+        stderrText: stderr,
+        spawnError: false,
       });
     });
 
@@ -220,6 +293,13 @@ function runCodexContainer(task, index = 0, batchStart = Date.now()) {
         startedAt,
         finishedAt: Date.now(),
         batchStart,
+        timedOut: false,
+        outputCapped: false,
+        stdoutBytes,
+        stderrBytes,
+        stdoutText: stdout,
+        stderrText: stderr,
+        spawnError: true,
       });
     });
   });
@@ -407,7 +487,120 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       },
       "codex"
     );
-    const result = await runCodexContainer(task, 0);
+    const invocationId = randomUUID();
+    const batchId = randomUUID();
+    const batchStart = Date.now();
+    const promptSlug = toPromptSlug(task.prompt);
+    const project = path.basename(task.cwd);
+    const tokenEst = Math.ceil(task.prompt.length / 4);
+    const statusTasks = [{
+      index: 0,
+      status: "running",
+      promptSlug,
+      project,
+      startedAt: batchStart,
+      endedAt: null,
+      durationMs: null,
+    }];
+
+    ensureSession(task.model);
+    try {
+      insertBatch(batchId, SESSION_ID, 1);
+      const taskId = insertTask({
+        invocation_id: invocationId,
+        batch_id: batchId,
+        session_id: SESSION_ID,
+        parent_task_id: null,
+        task_index: 0,
+        tool_type: "codex",
+        project,
+        cwd: task.cwd,
+        prompt_slug: promptSlug,
+        prompt_hash: toPromptHash(task.prompt),
+        prompt: null,
+        url: null,
+        sandbox: task.sandbox,
+        approval: task["approval-policy"],
+        model: task.model ?? null,
+        skip_git_check: task["skip-git-repo-check"] ? 1 : 0,
+        started_at: batchStart,
+        ended_at: null,
+        duration_ms: null,
+        exit_code: null,
+        status: "running",
+        failure_reason: null,
+        timed_out: 0,
+        output_capped: 0,
+        stdout_bytes: 0,
+        stderr_bytes: 0,
+        output_truncated: null,
+        error_text: null,
+        redaction_count: 0,
+        token_est: tokenEst,
+        cost_est_usd: null,
+      });
+      autoTag(taskId, promptSlug, task.sandbox);
+      writeBatchStatus(batchId, statusTasks);
+    } catch (error) {
+      logDbError("single task setup failed", error);
+    }
+
+    const result = await runCodexContainer(task, 0, batchStart);
+    const failed = !result.success;
+    const failureReason = toFailureReason(result);
+    let redactionCount = 0;
+    let promptValue = null;
+    let outputValue = null;
+    let errorText = null;
+
+    const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
+    const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
+
+    if (failed || shouldStoreFullPrompt(project)) {
+      const redacted = redact(task.prompt.slice(0, promptCap));
+      promptValue = redacted.text;
+      redactionCount += redacted.count;
+    }
+    if (failed || shouldStoreFullOutput(project)) {
+      const redacted = redact(toStoredOutput(result));
+      outputValue = redacted.text;
+      redactionCount += redacted.count;
+    }
+    if (failed) {
+      const redacted = redact(toStoredError(result));
+      errorText = redacted.text;
+      redactionCount += redacted.count;
+    }
+
+    try {
+      updateTask(invocationId, {
+        ended_at: result.finishedAt,
+        duration_ms: result.finishedAt - result.startedAt,
+        exit_code: result.exitCode,
+        status: failed ? "failed" : "done",
+        failure_reason: failureReason,
+        timed_out: result.timedOut ? 1 : 0,
+        output_capped: result.outputCapped ? 1 : 0,
+        stdout_bytes: result.stdoutBytes,
+        stderr_bytes: result.stderrBytes,
+        prompt: promptValue,
+        output_truncated: outputValue,
+        error_text: errorText,
+        redaction_count: redactionCount,
+      });
+      statusTasks[0] = {
+        ...statusTasks[0],
+        status: failed ? "failed" : "done",
+        endedAt: result.finishedAt,
+        durationMs: result.finishedAt - result.startedAt,
+      };
+      writeBatchStatus(batchId, statusTasks);
+      completeBatch(batchId, failed ? 1 : 0, tokenEst);
+      cleanBatchStatus(batchId);
+    } catch (error) {
+      logDbError("single task finalize failed", error);
+    }
+
     return {
       content: [{ type: "text", text: formatResult(result) }],
       isError: !result.success,
@@ -423,11 +616,148 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       return normalizeTask(taskWithApprovalPolicy, `codex_parallel task ${i + 1}`);
     });
-    // Fan out — all containers start immediately
+    const batchId = randomUUID();
     const batchStart = Date.now();
+    const taskStates = normalizedTasks.map((task, index) => ({
+      index,
+      invocationId: randomUUID(),
+      promptSlug: toPromptSlug(task.prompt),
+      project: path.basename(task.cwd),
+      status: "queued",
+      startedAt: null,
+      endedAt: null,
+      durationMs: null,
+      tokenEst: Math.ceil(task.prompt.length / 4),
+    }));
+
+    ensureSession(normalizedTasks[0]?.model);
+    try {
+      insertBatch(batchId, SESSION_ID, normalizedTasks.length);
+      for (const state of taskStates) {
+        const sourceTask = normalizedTasks[state.index];
+        const taskId = insertTask({
+          invocation_id: state.invocationId,
+          batch_id: batchId,
+          session_id: SESSION_ID,
+          parent_task_id: null,
+          task_index: state.index,
+          tool_type: "codex",
+          project: state.project,
+          cwd: sourceTask.cwd,
+          prompt_slug: state.promptSlug,
+          prompt_hash: toPromptHash(sourceTask.prompt),
+          prompt: null,
+          url: null,
+          sandbox: sourceTask.sandbox,
+          approval: sourceTask["approval-policy"],
+          model: sourceTask.model ?? null,
+          skip_git_check: sourceTask["skip-git-repo-check"] ? 1 : 0,
+          started_at: null,
+          ended_at: null,
+          duration_ms: null,
+          exit_code: null,
+          status: "queued",
+          failure_reason: null,
+          timed_out: 0,
+          output_capped: 0,
+          stdout_bytes: 0,
+          stderr_bytes: 0,
+          output_truncated: null,
+          error_text: null,
+          redaction_count: 0,
+          token_est: state.tokenEst,
+          cost_est_usd: null,
+        });
+        autoTag(taskId, state.promptSlug, sourceTask.sandbox);
+      }
+      writeBatchStatus(batchId, taskStates);
+    } catch (error) {
+      logDbError("parallel setup failed", error);
+    }
+
+    // Fan out — all containers start immediately
     const results = await Promise.all(
-      normalizedTasks.map((task, i) => runCodexContainer(task, i, batchStart))
+      normalizedTasks.map((task, i) =>
+        runCodexContainer(task, i, batchStart, {
+          onStart: ({ startedAt }) => {
+            const state = taskStates[i];
+            state.status = "running";
+            state.startedAt = startedAt;
+            try {
+              updateTask(state.invocationId, { status: "running", started_at: startedAt });
+              writeBatchStatus(batchId, taskStates);
+            } catch (error) {
+              logDbError(`parallel start update failed (task ${i + 1})`, error);
+            }
+          },
+        }).then((result) => {
+          const state = taskStates[i];
+          const failed = !result.success;
+          const failureReason = toFailureReason(result);
+          let redactionCount = 0;
+          let promptValue = null;
+          let outputValue = null;
+          let errorText = null;
+          const project = state.project;
+          const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
+          const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
+
+          if (failed || shouldStoreFullPrompt(project)) {
+            const redacted = redact(task.prompt.slice(0, promptCap));
+            promptValue = redacted.text;
+            redactionCount += redacted.count;
+          }
+          if (failed || shouldStoreFullOutput(project)) {
+            const redacted = redact(toStoredOutput(result));
+            outputValue = redacted.text;
+            redactionCount += redacted.count;
+          }
+          if (failed) {
+            const redacted = redact(toStoredError(result));
+            errorText = redacted.text;
+            redactionCount += redacted.count;
+          }
+
+          state.status = failed ? "failed" : "done";
+          state.startedAt = state.startedAt ?? result.startedAt;
+          state.endedAt = result.finishedAt;
+          state.durationMs = result.finishedAt - (state.startedAt ?? result.startedAt);
+
+          try {
+            updateTask(state.invocationId, {
+              started_at: state.startedAt,
+              ended_at: result.finishedAt,
+              duration_ms: state.durationMs,
+              exit_code: result.exitCode,
+              status: state.status,
+              failure_reason: failureReason,
+              timed_out: result.timedOut ? 1 : 0,
+              output_capped: result.outputCapped ? 1 : 0,
+              stdout_bytes: result.stdoutBytes,
+              stderr_bytes: result.stderrBytes,
+              prompt: promptValue,
+              output_truncated: outputValue,
+              error_text: errorText,
+              redaction_count: redactionCount,
+            });
+            writeBatchStatus(batchId, taskStates);
+          } catch (error) {
+            logDbError(`parallel completion update failed (task ${i + 1})`, error);
+          }
+          return result;
+        })
+      )
     );
+
+    try {
+      const failedCount = results.filter((result) => !result.success).length;
+      const totalTokens = taskStates.reduce((sum, state) => sum + state.tokenEst, 0);
+      completeBatch(batchId, failedCount, totalTokens);
+      cleanBatchStatus(batchId);
+    } catch (error) {
+      logDbError("parallel batch completion failed", error);
+    }
+
     const allSucceeded = results.every((r) => r.success);
     return {
       content: [{ type: "text", text: formatParallelResults(results) }],
