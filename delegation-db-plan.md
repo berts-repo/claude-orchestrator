@@ -149,9 +149,9 @@ INSERT INTO config VALUES ('prompt_storage_project:claude-orchestrator', 'full')
 ```
 Managed via skill:
 ```
-/delegation-config set-project parrot prompt-storage full
-/delegation-config set-project parrot prompt-storage slug-only   ← revert
-/delegation-config list-projects                                  ← show all overrides
+/audit set-project parrot prompt-storage full
+/audit set-project parrot prompt-storage slug-only   ← revert
+/audit list-projects                                 ← show all overrides
 ```
 
 ### Tier 2 — Session opt-in (env var, one terminal session)
