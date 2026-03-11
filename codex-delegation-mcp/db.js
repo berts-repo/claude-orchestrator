@@ -6,7 +6,7 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 
 const CLAUDE_DIR = path.join(homedir(), ".claude");
-const DB_PATH = path.join(CLAUDE_DIR, "delegation.db");
+const DB_PATH = path.join(CLAUDE_DIR, "audit.db");
 const TMP_DIR = path.join(CLAUDE_DIR, "tmp");
 const CURRENT_BATCH_ID_PATH = path.join(TMP_DIR, "current-batch-id");
 
@@ -269,10 +269,10 @@ export function runRetentionCleanup() {
     }
 
     console.error(
-      `[delegation-db] retention: nulled ${nulledPrompts} prompts, ${nulledOutputs} outputs, deleted ${deletedTasks} tasks`
+      `[audit-db] retention: nulled ${nulledPrompts} prompts, ${nulledOutputs} outputs, deleted ${deletedTasks} tasks`
     );
   } catch (error) {
-    console.error(`[delegation-db] retention cleanup failed: ${error.message}`);
+    console.error(`[audit-db] retention cleanup failed: ${error.message}`);
   }
 }
 
@@ -464,14 +464,14 @@ export function autoTag(taskId, promptSlug, sandbox) {
 }
 
 export function shouldStoreFullPrompt(project) {
-  if (process.env.DELEGATION_LOG_PROMPTS === "1") return true;
+  if (process.env.AUDIT_LOG_PROMPTS === "1") return true;
   if (getConfig(`prompt_storage_project:${project}`, "slug-only") === "full") return true;
   if (getConfig("prompt_storage", "slug-only") === "full") return true;
   return false;
 }
 
 export function shouldStoreFullOutput(project) {
-  if (process.env.DELEGATION_LOG_OUTPUT === "1") return true;
+  if (process.env.AUDIT_LOG_OUTPUT === "1") return true;
   if (getConfig(`output_storage_project:${project}`, "slug-only") === "full") return true;
   if (getConfig("output_storage", "slug-only") === "full") return true;
   return false;
