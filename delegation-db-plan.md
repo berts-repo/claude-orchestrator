@@ -13,8 +13,9 @@ minimal and safe by default.
 3. **Watcher script** `scripts/watch-tasks.sh` — renders live status table
 4. **Pre/Post hooks** — auto-launches/kills overlay window on delegate calls
 5. **PostToolUse hook** for web delegate — logs Gemini/web calls to same DB
-6. **Skills integration** — /monitor, /summarize, /log-cleanup query the DB
-7. **JSONL logs retired** once DB is stable (existing hooks removed)
+6. **`/audit` skill** — configure retention, per-project prompt storage, and query the DB
+7. **Skills updated** — /monitor and /summarize query the DB; /log-cleanup retired (DB handles retention)
+8. **JSONL logs retired** once DB is stable (existing hooks removed)
 
 ### Data Flow
 ```
@@ -147,16 +148,20 @@ Config table entries keyed by project name:
 INSERT INTO config VALUES ('prompt_storage_project:parrot', 'full');
 INSERT INTO config VALUES ('prompt_storage_project:claude-orchestrator', 'full');
 ```
-Managed via skill:
+Managed via `/audit` skill:
 ```
-/audit set-project parrot prompt-storage full
-/audit set-project parrot prompt-storage slug-only   ← revert
-/audit list-projects                                 ← show all overrides
+/audit set-project parrot prompt-storage full        ← enable full prompts for project
+/audit set-project parrot prompt-storage slug-only   ← revert to default
+/audit list-projects                                 ← show all per-project overrides
+/audit set prompt-full-days 30                       ← change global retention
+/audit status                                        ← show current config + DB stats
 ```
 
 ### Tier 2 — Session opt-in (env var, one terminal session)
 ```bash
-DELEGATION_LOG_PROMPTS=1 claude
+DELEGATION_LOG_PROMPTS=1 claude          # store full prompts this session
+DELEGATION_LOG_OUTPUT=1 claude           # store full output this session
+DELEGATION_LOG_PROMPTS=1 DELEGATION_LOG_OUTPUT=1 claude   # both
 ```
 Gone when terminal closes. Good for ad-hoc audit sessions.
 
@@ -214,8 +219,9 @@ ORDER BY started_at DESC;
 4. Pre/Post hooks for overlay window
 5. Web delegate PostToolUse hook
 6. Retention/cleanup on startup
-7. Skills integration (/monitor, /summarize, /log-cleanup)
-8. JSONL hook retirement + migration
+7. `/audit` skill (set-project, list-projects, set, status subcommands)
+8. Update /monitor and /summarize to query DB; retire /log-cleanup
+9. JSONL hook retirement + migration
 
 ## Key Decisions
 
