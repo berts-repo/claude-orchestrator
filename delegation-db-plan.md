@@ -1,27 +1,46 @@
 # Delegation Audit DB + Live Overlay Plan
 
 ## Goal
-Add SQLite audit logging to the codex delegation MCP server + a live terminal overlay for monitoring parallel tasks in flight.
+Replace existing JSONL hook-based logging with a SQLite audit DB that provides real-time
+task visibility, cross-session querying, and project history — while keeping stored data
+minimal and safe by default.
 
 ## Architecture
 
 ### Components
-1. **SQLite DB** at `~/.claude/delegation.db` — cross-session audit trail
-2. **Per-batch JSON status files** at `/tmp/codex-status-{batchId}.json` — live monitoring source
+1. **SQLite DB** at `~/.claude/delegation.db` (`0600`) — cross-session audit trail
+2. **Per-batch JSON status files** at `~/.claude/tmp/{random}.json` (`0700` dir) — live monitoring source
 3. **Watcher script** `scripts/watch-tasks.sh` — renders live status table
 4. **Pre/Post hooks** — auto-launches/kills overlay window on delegate calls
 5. **PostToolUse hook** for web delegate — logs Gemini/web calls to same DB
-6. **Skills integration** — /monitor and /summarize query the DB
+6. **Skills integration** — /monitor, /summarize, /log-cleanup query the DB
+7. **JSONL logs retired** once DB is stable (existing hooks removed)
 
 ### Data Flow
 ```
 codex_parallel call
-  → PreToolUse hook launches overlay window (reads /tmp status file)
-  → server.js writes /tmp/codex-status-{batchId}.json (queued→running→done)
+  → PreToolUse hook launches overlay window (reads ~/.claude/tmp status file)
+  → server.js writes ~/.claude/tmp/{batchId}.json (queued→running→done)
   → watcher polls file, renders live table
-  → on completion, server.js flushes to SQLite
+  → on completion, server.js flushes metadata to SQLite (full prompt only on failure)
   → PostToolUse hook kills overlay
 ```
+
+## Storage Tiers (security model)
+
+Prompts and outputs can contain secrets. Default to minimal storage:
+
+| Column | Default | When full content stored |
+|--------|---------|--------------------------|
+| `prompt_slug` | Always (80 chars) | — |
+| `prompt_hash` | Always (SHA-256) | — |
+| `prompt` | **Never by default** | Failure only, or `DELEGATION_LOG_PROMPTS=1` |
+| `output_truncated` | **Never by default** | Failure only, or `DELEGATION_LOG_OUTPUT=1` |
+| `error_text` | **Always on failure** | stderr truncated to 2KB, redacted |
+| `redaction_count` | Always | — |
+
+Redaction pass applied before any text is written: strips API keys (`sk-*`, `Bearer *`),
+private key blocks, `.env`-style `KEY=VALUE` lines, and high-entropy strings (>50 bits).
 
 ## Schema
 
@@ -49,6 +68,7 @@ CREATE TABLE batches (
 -- Every delegated task (codex or web)
 CREATE TABLE tasks (
   id               INTEGER PRIMARY KEY,
+  invocation_id    TEXT UNIQUE,   -- uuid per tool call, avoids hash collisions
   batch_id         TEXT REFERENCES batches(id),
   session_id       TEXT REFERENCES sessions(id),
   parent_task_id   INTEGER REFERENCES tasks(id), -- for nested delegation
@@ -56,26 +76,36 @@ CREATE TABLE tasks (
   tool_type        TEXT,    -- 'codex' | 'web-fetch' | 'web-search'
   project          TEXT,    -- basename(cwd)
   cwd              TEXT,
-  prompt           TEXT,    -- full prompt, expired per config
-  prompt_slug      TEXT,    -- first ~80 chars, kept longer
+  prompt_slug      TEXT,    -- first 80 chars, always stored
+  prompt_hash      TEXT,    -- SHA-256 of full prompt
+  prompt           TEXT,    -- NULL by default; only on failure or opt-in
   url              TEXT,    -- for web calls
   sandbox          TEXT,
   approval         TEXT,
+  model            TEXT,    -- codex model override if set
+  skip_git_check   INTEGER, -- bool: --skip-git-repo-check was passed
   started_at       INTEGER, -- unix epoch ms
   ended_at         INTEGER,
   duration_ms      INTEGER,
   exit_code        INTEGER,
   status           TEXT,    -- queued/running/done/failed
-  output_truncated TEXT,    -- first 2KB stdout, expired sooner
-  error_text       TEXT,    -- stderr on failure, truncated 2KB
-  token_est        INTEGER, -- rough prompt token count (chars/4)
+  failure_reason   TEXT,    -- exit_nonzero|timeout|output_capped|spawn_error
+  timed_out        INTEGER, -- bool
+  output_capped    INTEGER, -- bool: output was truncated by server
+  stdout_bytes     INTEGER,
+  stderr_bytes     INTEGER,
+  output_truncated TEXT,    -- NULL by default; first 2KB on failure or opt-in
+  error_text       TEXT,    -- stderr on failure, truncated+redacted to 2KB
+  redaction_count  INTEGER DEFAULT 0,
+  token_est        INTEGER, -- prompt char count / 4
   cost_est_usd     REAL     -- estimated cost based on model + tokens
 );
 
 -- Many-to-many tags on tasks
 CREATE TABLE task_tags (
-  task_id INTEGER REFERENCES tasks(id),
-  tag     TEXT,
+  task_id    INTEGER REFERENCES tasks(id),
+  tag        TEXT,
+  tag_source TEXT,  -- 'auto' | 'manual' | 'rule'
   PRIMARY KEY (task_id, tag)
 );
 
@@ -91,46 +121,70 @@ CREATE TABLE config (
   value TEXT
 );
 -- Default config values:
--- prompt_full_days = 60
--- output_days      = 14
--- row_days         = 365
--- max_prompt_chars = 4000
--- max_db_mb        = 100
+-- prompt_full_days    = 7    (how long to keep full prompt text if stored)
+-- output_days         = 3    (how long to keep output text if stored)
+-- row_days            = 365  (how long to keep task rows)
+-- max_prompt_chars    = 4000 (truncation cap when storing full prompt)
+-- max_db_mb           = 100  (hard size cap, trims oldest rows)
 
 -- Indexes
-CREATE INDEX idx_tasks_project    ON tasks(project);
-CREATE INDEX idx_tasks_started    ON tasks(started_at);
-CREATE INDEX idx_tasks_status     ON tasks(status);
-CREATE INDEX idx_tasks_session    ON tasks(session_id);
-CREATE INDEX idx_tasks_parent     ON tasks(parent_task_id);
-CREATE INDEX idx_task_tags_tag    ON task_tags(tag);
+CREATE INDEX idx_tasks_project      ON tasks(project);
+CREATE INDEX idx_tasks_started      ON tasks(started_at);
+CREATE INDEX idx_tasks_status       ON tasks(status);
+CREATE INDEX idx_tasks_session      ON tasks(session_id);
+CREATE INDEX idx_tasks_parent       ON tasks(parent_task_id);
+CREATE INDEX idx_tasks_invocation   ON tasks(invocation_id);
+CREATE INDEX idx_task_tags_tag      ON task_tags(tag);
 ```
 
+## Security Requirements
+
+- DB file and WAL/SHM sidecar files: `chmod 0600` on creation
+- Status dir `~/.claude/tmp/`: `chmod 0700`, random filenames, atomic writes (write to `.tmp` then rename)
+- All SQL writes via prepared statements only — no dynamic SQL fragments from user/prompt data
+- Redaction pass on `prompt`, `error_text`, `output_truncated` before any insert
+- Full prompt stored only on failure (default) or explicit env var opt-in
+
 ## Retention Strategy
-- Rotate columns at different rates (prompt expires before rows)
-- Run cleanup on server startup (not per-insert)
-- Hard size cap enforced by trimming oldest rows
+
+- Column-level expiry: null out `prompt`/`output_truncated` after their retention age
+- Row-level expiry: delete rows older than `row_days`
+- Size cap: trim oldest rows when DB exceeds `max_db_mb`
+- Run once at server startup, not per-insert
+- Replaces existing hook-based `MAX_ENTRIES=100` / `RETENTION_DAYS=30` JSONL rotation
+
+## Migration from JSONL
+
+- Phase 1: DB writes alongside existing JSONL (dual-write)
+- Phase 2: Update /monitor, /summarize, /log-cleanup to read from DB
+- Phase 3: Remove JSONL hooks once DB is confirmed stable
+- Fix `/session` log filename typo: `delegation.jsonl` → `delegations.jsonl` during migration
 
 ## Implementation Order
-1. Schema + server.js SQLite logging (load-bearing, enables everything else)
-2. Per-task status file writes in server.js (enables live overlay)
-3. Watcher script
-4. Pre/Post hooks for overlay
+
+1. Schema + server.js SQLite logging with tiered storage (load-bearing)
+2. Per-task status file writes in server.js for live overlay
+3. Watcher script (detect ghostty/alacritty/kitty at runtime)
+4. Pre/Post hooks for overlay window
 5. Web delegate PostToolUse hook
 6. Retention/cleanup on startup
-7. Skills integration (/monitor, /summarize)
+7. Skills integration (/monitor, /summarize, /log-cleanup)
+8. JSONL hook retirement + migration
 
 ## Key Decisions
-- Use `better-sqlite3` (sync, simpler for Node MCP server)
+
+- `better-sqlite3` (sync, no callback complexity in Node MCP server)
 - DB path: `~/.claude/delegation.db`
-- Status files: `/tmp/codex-status-{batchId}.json` (ephemeral, cleaned up post-hook)
+- Status files: `~/.claude/tmp/{randomId}.json` (not /tmp — private dir, 0700)
 - Web delegate logged via PostToolUse hook (no server changes needed for that server)
-- Overlay terminal: kitty floating window (adjust per user terminal)
+- Terminal overlay: runtime detection order — ghostty → alacritty → kitty → skip
 - Session ID generated once at server startup, written to sessions table
-- Tags auto-inferred from prompt keywords (e.g. 'security', 'refactor') + manually settable
-- token_est = prompt char count / 4 (rough but zero-cost approximation)
+- Tags auto-inferred from prompt keywords + manually settable; `tag_source` tracks provenance
+- `token_est` = prompt char count / 4 (zero-cost approximation)
+- `invocation_id` = UUID per call, eliminates hash-collision issues in current hooks
 
 ## Sample Queries
+
 ```sql
 -- Project history this week
 SELECT project, prompt_slug, datetime(started_at/1000, 'unixepoch')
@@ -145,9 +199,9 @@ FROM tasks GROUP BY project;
 SELECT batch_id, MAX(duration_ms) wall_time, COUNT(*) tasks
 FROM tasks GROUP BY batch_id ORDER BY wall_time DESC LIMIT 10;
 
--- Recall: have we solved this before?
+-- Recall: have we done similar work before?
 SELECT project, prompt_slug, datetime(started_at/1000, 'unixepoch')
-FROM tasks WHERE prompt LIKE '%auth%' ORDER BY started_at DESC;
+FROM tasks WHERE prompt_slug LIKE '%auth%' ORDER BY started_at DESC;
 
 -- Everything in this session
 SELECT tool_type, project, prompt_slug, status, duration_ms
@@ -167,4 +221,8 @@ GROUP BY project ORDER BY cost DESC;
 SELECT t.id, t.parent_task_id, t.prompt_slug, t.status
 FROM tasks t WHERE t.batch_id = ?
 ORDER BY t.parent_task_id NULLS FIRST, t.task_index;
+
+-- Tasks with secrets redacted (audit)
+SELECT project, prompt_slug, redaction_count, started_at
+FROM tasks WHERE redaction_count > 0 ORDER BY started_at DESC;
 ```
