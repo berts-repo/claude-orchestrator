@@ -137,6 +137,52 @@ CREATE INDEX idx_tasks_invocation   ON tasks(invocation_id);
 CREATE INDEX idx_task_tags_tag      ON task_tags(tag);
 ```
 
+## Prompt Storage Opt-In
+
+Default is `slug_only` for all projects. Full prompt storage is opt-in via three tiers:
+
+### Tier 1 — Per-project (persistent, recommended for trusted projects)
+Config table entries keyed by project name:
+```sql
+INSERT INTO config VALUES ('prompt_storage_project:parrot', 'full');
+INSERT INTO config VALUES ('prompt_storage_project:claude-orchestrator', 'full');
+```
+Managed via skill:
+```
+/delegation-config set-project parrot prompt-storage full
+/delegation-config set-project parrot prompt-storage slug-only   ← revert
+/delegation-config list-projects                                  ← show all overrides
+```
+
+### Tier 2 — Session opt-in (env var, one terminal session)
+```bash
+DELEGATION_LOG_PROMPTS=1 claude
+```
+Gone when terminal closes. Good for ad-hoc audit sessions.
+
+### Tier 3 — Failure automatic (no opt-in needed)
+On any failed task, full prompt is always stored regardless of config.
+This is the most common debug need — requires zero action.
+
+### Server lookup order at write time
+1. `prompt_storage_project:{project}` in config table
+2. Global `prompt_storage` in config table
+3. Hardcoded default: `slug_only`
+
+### Queries enabled by per-project full storage
+```sql
+-- Full-text recall on a trusted project
+SELECT project, prompt, datetime(started_at/1000, 'unixepoch')
+FROM tasks
+WHERE project = 'parrot' AND prompt LIKE '%SSRF%'
+ORDER BY started_at DESC;
+
+-- Compare what we tried across sessions on same project
+SELECT session_id, prompt, status, duration_ms
+FROM tasks WHERE project = 'parrot'
+ORDER BY started_at DESC;
+```
+
 ## Security Requirements
 
 - DB file and WAL/SHM sidecar files: `chmod 0600` on creation
