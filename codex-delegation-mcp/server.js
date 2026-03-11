@@ -141,7 +141,7 @@ const TaskSchema = z.object({
 });
 
 const ParallelSchema = z.object({
-  tasks: z.array(TaskSchema).min(1).max(10).describe("Tasks to run in parallel (max 10)"),
+  tasks: z.preprocess(val => typeof val === 'string' ? JSON.parse(val) : val, z.array(TaskSchema).min(1).max(10)).describe("Tasks to run in parallel (max 10)"),
 });
 
 // ── Subprocess runner ──────────────────────────────────────────────────────
