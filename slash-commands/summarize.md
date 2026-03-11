@@ -53,3 +53,15 @@ After Codex returns its output, display the summary under "## Project Context".
 
 After displaying the summary, write its content to `.SUMMARY.md` in the project root.
 Confirm to the user: "Summary saved to .SUMMARY.md"
+
+## Delegation DB Context
+
+Also instruct Claude to query `~/.claude/delegation.db` for delegation history relevant to this project:
+- Filter tasks where `cwd` equals the current working directory, or `project` matches the current project name
+- Show last 20 tasks for this project: `prompt_slug`, `status`, `duration_ms`, `started_at`
+- Use this data to improve the session summary with what was actually delegated
+
+Use:
+- `sqlite3 ~/.claude/delegation.db "SELECT ..."`
+
+If DB does not exist, skip silently.
