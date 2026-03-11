@@ -1,4 +1,4 @@
-# Delegation Audit DB + Live Overlay Plan
+# Audit DB + Live Overlay Plan
 
 ## Goal
 Replace existing JSONL hook-based logging with a SQLite audit DB that provides real-time
@@ -8,7 +8,7 @@ minimal and safe by default.
 ## Architecture
 
 ### Components
-1. **SQLite DB** at `~/.claude/delegation.db` (`0600`) — cross-session audit trail
+1. **SQLite DB** at `~/.claude/audit.db` (`0600`) — cross-session audit trail
 2. **Per-batch JSON status files** at `~/.claude/tmp/{random}.json` (`0700` dir) — live monitoring source
 3. **Watcher script** `scripts/watch-tasks.sh` — renders live status table
 4. **Pre/Post hooks** — auto-launches/kills overlay window on delegate calls
@@ -35,8 +35,8 @@ Prompts and outputs can contain secrets. Default to minimal storage:
 |--------|---------|--------------------------|
 | `prompt_slug` | Always (80 chars) | — |
 | `prompt_hash` | Always (SHA-256) | — |
-| `prompt` | **Never by default** | Failure only, or `DELEGATION_LOG_PROMPTS=1` |
-| `output_truncated` | **Never by default** | Failure only, or `DELEGATION_LOG_OUTPUT=1` |
+| `prompt` | **Never by default** | Failure only, or `AUDIT_LOG_PROMPTS=1` |
+| `output_truncated` | **Never by default** | Failure only, or `AUDIT_LOG_OUTPUT=1` |
 | `error_text` | **Always on failure** | stderr truncated to 2KB, redacted |
 | `redaction_count` | Always | — |
 
@@ -159,9 +159,9 @@ Managed via `/audit` skill:
 
 ### Tier 2 — Session opt-in (env var, one terminal session)
 ```bash
-DELEGATION_LOG_PROMPTS=1 claude          # store full prompts this session
-DELEGATION_LOG_OUTPUT=1 claude           # store full output this session
-DELEGATION_LOG_PROMPTS=1 DELEGATION_LOG_OUTPUT=1 claude   # both
+AUDIT_LOG_PROMPTS=1 claude          # store full prompts this session
+AUDIT_LOG_OUTPUT=1 claude           # store full output this session
+AUDIT_LOG_PROMPTS=1 AUDIT_LOG_OUTPUT=1 claude   # both
 ```
 Gone when terminal closes. Good for ad-hoc audit sessions.
 
@@ -226,7 +226,7 @@ ORDER BY started_at DESC;
 ## Key Decisions
 
 - `better-sqlite3` (sync, no callback complexity in Node MCP server)
-- DB path: `~/.claude/delegation.db`
+- DB path: `~/.claude/audit.db`
 - Status files: `~/.claude/tmp/{randomId}.json` (not /tmp — private dir, 0700)
 - Web delegate logged via PostToolUse hook (no server changes needed for that server)
 - Terminal overlay: runtime detection order — ghostty → alacritty → kitty → skip

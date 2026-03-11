@@ -1,4 +1,4 @@
-Inspect and manage the delegation audit DB.
+Inspect and manage the audit DB.
 
 Parse `$ARGUMENTS` as one of these subcommands:
 - `set-project <name> prompt-storage <full|slug-only>`
@@ -8,10 +8,10 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `query <sql>`
 
 Use Bash with `sqlite3` for all DB access:
-- `sqlite3 ~/.claude/delegation.db "..."`
+- `sqlite3 ~/.claude/audit.db "..."`
 
-If `~/.claude/delegation.db` does not exist, print:
-`Delegation DB not found at ~/.claude/delegation.db`
+If `~/.claude/audit.db` does not exist, print:
+`Audit DB not found at ~/.claude/audit.db`
 Then stop.
 
 For `query <sql>`:
@@ -48,8 +48,8 @@ For `status`:
   - `prompt_storage` (if present)
 - Show DB stats:
   - Row counts per table (`sessions`, `batches`, `tasks`, `task_tags`, `tags`, `config`)
-  - DB file size for `~/.claude/delegation.db`
-- Include an "Example Queries" section with helpful SQL from the delegation DB plan:
+  - DB file size for `~/.claude/audit.db`
+- Include an "Example Queries" section with helpful SQL from the audit DB plan:
   - Project history this week
   - Failure rate by project
   - Slowest parallel batches

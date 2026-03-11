@@ -4,7 +4,7 @@
 # HOOK_TIMEOUT: 10
 set -euo pipefail
 
-DB_PATH="${HOME}/.claude/delegation.db"
+DB_PATH="${HOME}/.claude/audit.db"
 SESSION_FILE="${HOME}/.claude/tmp/current-session-id"
 
 [[ -f "$DB_PATH" ]] || exit 0

@@ -18,7 +18,7 @@ Both log files use a unified schema with envelope fields: `timestamp`, `level`, 
 
 Produce a report with these sections:
 
-## Delegation Usage (last 7 / 30 days)
+## Audit Usage (last 7 / 30 days)
 
 - Total delegations, broken down by type (Codex vs Gemini) and event name
 - Success rate (entries with `"success": true` vs false)
@@ -57,13 +57,13 @@ Format the report with markdown tables where appropriate. Keep it concise — th
 
 After Codex returns, display the report verbatim.
 
-### Delegation Activity
-Query `~/.claude/delegation.db` for recent activity:
+### Audit Activity
+Query `~/.claude/audit.db` for recent activity:
 - Last 10 tasks: `project`, `prompt_slug`, `status`, `duration_ms`, `started_at`
 - Any currently running tasks (`status = 'running'`)
 - Failure rate summary by project (last 7 days)
 
 Use:
-- `sqlite3 ~/.claude/delegation.db "SELECT ..."`
+- `sqlite3 ~/.claude/audit.db "SELECT ..."`
 
 If DB does not exist, skip this section silently.

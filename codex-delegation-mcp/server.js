@@ -68,7 +68,7 @@ function parseAllowedCwdRoots() {
 const ALLOWED_CWD_ROOTS = parseAllowedCwdRoots();
 
 function logDbError(context, error) {
-  console.warn(`[codex-delegation] ${context}: ${error.message}`);
+  console.warn(`[codex-audit] ${context}: ${error.message}`);
 }
 
 function ensureSession(model) {

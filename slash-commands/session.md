@@ -78,12 +78,12 @@ Keep output under 60 lines total.
 If --log is set, append this extension to the Codex prompt:
 
 ---
-Also read ~/.claude/logs/delegation.jsonl. Extract the last N entries (N = LOG_N,
+Also read ~/.claude/logs/delegations.jsonl. Extract the last N entries (N = LOG_N,
 default 5 if no number given after --log).
 
 Add this section at the end of your output:
 
-## Recent Delegation
+## Recent Audit
 [one bullet per entry: [sandbox] — [short task description, ≤10 words]]
 ---
 
