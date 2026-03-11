@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const CLAUDE_DIR = path.join(homedir(), ".claude");
 const DB_PATH = path.join(CLAUDE_DIR, "delegation.db");
 const TMP_DIR = path.join(CLAUDE_DIR, "tmp");
+const CURRENT_BATCH_ID_PATH = path.join(TMP_DIR, "current-batch-id");
 
 let db = null;
 let statements = null;
@@ -189,6 +190,92 @@ function ensurePrivatePath(pathname, mode) {
   fs.chmodSync(pathname, mode);
 }
 
+function parseRetentionInt(rawValue, fallback) {
+  const parsed = Number.parseInt(String(rawValue), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function runRetentionCleanup() {
+  if (!dbReady()) return;
+  try {
+    const now = Date.now();
+
+    const promptFullDays = parseRetentionInt(getConfig("prompt_full_days", "7"), 7);
+    const outputDays = parseRetentionInt(getConfig("output_days", "3"), 3);
+    const rowDays = parseRetentionInt(getConfig("row_days", "365"), 365);
+    const maxDbMb = parseRetentionInt(getConfig("max_db_mb", "100"), 100);
+
+    const promptCutoff = now - promptFullDays * 86400 * 1000;
+    const outputCutoff = now - outputDays * 86400 * 1000;
+    const rowCutoff = now - rowDays * 86400 * 1000;
+
+    const nullPromptStmt = db.prepare(`
+      UPDATE tasks
+      SET prompt = NULL
+      WHERE started_at < ? AND prompt IS NOT NULL
+    `);
+    const nullOutputStmt = db.prepare(`
+      UPDATE tasks
+      SET output_truncated = NULL
+      WHERE started_at < ? AND output_truncated IS NOT NULL
+    `);
+    const deleteOldTasksStmt = db.prepare(`
+      DELETE FROM tasks
+      WHERE started_at < ?
+    `);
+    const deleteOldBatchesStmt = db.prepare(`
+      DELETE FROM batches
+      WHERE ended_at < ?
+        AND id NOT IN (
+          SELECT DISTINCT batch_id FROM tasks WHERE batch_id IS NOT NULL
+        )
+    `);
+    const deleteOldSessionsStmt = db.prepare(`
+      DELETE FROM sessions
+      WHERE started_at < ?
+        AND id NOT IN (
+          SELECT DISTINCT session_id FROM tasks WHERE session_id IS NOT NULL
+        )
+    `);
+    const trimOldestTasksStmt = db.prepare(`
+      DELETE FROM tasks
+      WHERE id IN (
+        SELECT id FROM tasks
+        ORDER BY started_at ASC
+        LIMIT ?
+      )
+    `);
+    const vacuumStmt = db.prepare("VACUUM");
+
+    const nulledPrompts = nullPromptStmt.run(promptCutoff).changes;
+    const nulledOutputs = nullOutputStmt.run(outputCutoff).changes;
+    let deletedTasks = deleteOldTasksStmt.run(rowCutoff).changes;
+    deleteOldBatchesStmt.run(rowCutoff);
+    deleteOldSessionsStmt.run(rowCutoff);
+
+    const maxDbBytes = maxDbMb * 1024 * 1024;
+    for (let i = 0; i < 5; i += 1) {
+      let sizeBytes = 0;
+      try {
+        sizeBytes = fs.statSync(DB_PATH).size;
+      } catch {
+        break;
+      }
+      if (sizeBytes <= maxDbBytes) break;
+      const trimmed = trimOldestTasksStmt.run(500).changes;
+      if (trimmed === 0) break;
+      deletedTasks += trimmed;
+      vacuumStmt.run();
+    }
+
+    console.error(
+      `[delegation-db] retention: nulled ${nulledPrompts} prompts, ${nulledOutputs} outputs, deleted ${deletedTasks} tasks`
+    );
+  } catch (error) {
+    console.error(`[delegation-db] retention cleanup failed: ${error.message}`);
+  }
+}
+
 try {
   fs.mkdirSync(CLAUDE_DIR, { recursive: true, mode: 0o700 });
   fs.mkdirSync(TMP_DIR, { recursive: true, mode: 0o700 });
@@ -203,6 +290,7 @@ try {
   initSchema(db);
   initDefaults(db);
   statements = setupStatements(db);
+  runRetentionCleanup();
 } catch (error) {
   console.warn(`[codex-delegation] SQLite logging disabled: ${error.message}`);
 }
@@ -417,5 +505,22 @@ export function writeBatchStatus(batchId, tasks) {
 export function cleanBatchStatus(batchId) {
   try {
     fs.unlinkSync(path.join(TMP_DIR, `${batchId}.json`));
+  } catch {}
+}
+
+export function writeCurrentBatchId(batchId) {
+  try {
+    fs.mkdirSync(TMP_DIR, { recursive: true, mode: 0o700 });
+    ensurePrivatePath(TMP_DIR, 0o700);
+    const tempPath = `${CURRENT_BATCH_ID_PATH}.tmp`;
+    fs.writeFileSync(tempPath, batchId, { mode: 0o600 });
+    fs.renameSync(tempPath, CURRENT_BATCH_ID_PATH);
+    ensurePrivatePath(CURRENT_BATCH_ID_PATH, 0o600);
+  } catch {}
+}
+
+export function clearCurrentBatchId() {
+  try {
+    fs.unlinkSync(CURRENT_BATCH_ID_PATH);
   } catch {}
 }

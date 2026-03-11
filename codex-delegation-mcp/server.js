@@ -30,6 +30,7 @@ import { fileURLToPath } from "url";
 import { z } from "zod";
 import {
   autoTag,
+  clearCurrentBatchId,
   cleanBatchStatus,
   completeBatch,
   getConfig,
@@ -41,6 +42,7 @@ import {
   updateTask,
   upsertSession,
   writeBatchStatus,
+  writeCurrentBatchId,
 } from "./db.js";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
@@ -534,6 +536,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       endedAt: null,
       durationMs: null,
     }];
+    writeCurrentBatchId(batchId);
 
     ensureSession(task.model);
     try {
@@ -631,6 +634,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       cleanBatchStatus(batchId);
     } catch (error) {
       logDbError("single task finalize failed", error);
+    } finally {
+      clearCurrentBatchId();
     }
 
     return {
@@ -650,6 +655,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     });
     const batchId = randomUUID();
     const batchStart = Date.now();
+    writeCurrentBatchId(batchId);
     const taskStates = normalizedTasks.map((task, index) => ({
       index,
       invocationId: randomUUID(),
@@ -788,6 +794,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       cleanBatchStatus(batchId);
     } catch (error) {
       logDbError("parallel batch completion failed", error);
+    } finally {
+      clearCurrentBatchId();
     }
 
     const allSucceeded = results.every((r) => r.success);

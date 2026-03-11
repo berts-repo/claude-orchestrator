@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: bash watch-tasks.sh <batchId>" >&2
+if [[ $# -gt 1 ]]; then
+  echo "Usage: bash watch-tasks.sh [batchId|auto]" >&2
   exit 1
 fi
 
-batch_id="$1"
+batch_arg="${1:-auto}"
+current_batch_file="${HOME}/.claude/tmp/current-batch-id"
+batch_id=""
+
+if [[ -z "$batch_arg" || "$batch_arg" == "auto" ]]; then
+  wait_start="$(date +%s%3N 2>/dev/null || python3 -c 'import time; print(int(time.time() * 1000))')"
+  while true; do
+    if [[ -f "$current_batch_file" ]]; then
+      detected_batch_id="$(cat "$current_batch_file" 2>/dev/null || true)"
+      detected_batch_id="${detected_batch_id//$'\n'/}"
+      detected_batch_id="${detected_batch_id//$'\r'/}"
+      if [[ -n "$detected_batch_id" ]]; then
+        batch_id="$detected_batch_id"
+        break
+      fi
+    fi
+
+    now_ms="$(date +%s%3N 2>/dev/null || python3 -c 'import time; print(int(time.time() * 1000))')"
+    if (( now_ms - wait_start >= 10000 )); then
+      echo "Timed out waiting for batch id pointer: $current_batch_file" >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
+else
+  batch_id="$batch_arg"
+fi
+
 status_file="${HOME}/.claude/tmp/${batch_id}.json"
 has_jq=0
 is_tty=0
