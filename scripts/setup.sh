@@ -19,8 +19,22 @@ warn_missing codex || true
 echo
 echo "==> Installing npm dependencies"
 if command -v npm >/dev/null 2>&1; then
-  (cd "$REPO/web-search-mcp" && npm install)
-  (cd "$REPO/codex-delegation-mcp" && npm install)
+  # Prefer npm ci for reproducible installs from lockfiles. If a lockfile is missing,
+  # run npm install once to generate it, then subsequent runs use npm ci.
+  if [[ -f "$REPO/web-search-mcp/package-lock.json" ]]; then
+    # No lifecycle scripts are required for this package; ignore scripts to reduce
+    # supply-chain risk from dependency install hooks.
+    (cd "$REPO/web-search-mcp" && npm ci --ignore-scripts)
+  else
+    (cd "$REPO/web-search-mcp" && npm install --ignore-scripts)
+  fi
+
+  if [[ -f "$REPO/codex-delegation-mcp/package-lock.json" ]]; then
+    # better-sqlite3 relies on install scripts to provide native bindings.
+    (cd "$REPO/codex-delegation-mcp" && npm ci)
+  else
+    (cd "$REPO/codex-delegation-mcp" && npm install)
+  fi
 else
   echo "WARNING: npm is unavailable; skipping dependency installation."
 fi

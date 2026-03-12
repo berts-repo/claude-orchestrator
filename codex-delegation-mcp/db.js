@@ -8,7 +8,12 @@ const require = createRequire(import.meta.url);
 const CLAUDE_DIR = path.join(homedir(), ".claude");
 const DB_PATH = path.join(CLAUDE_DIR, "audit.db");
 const TMP_DIR = path.join(CLAUDE_DIR, "tmp");
-const CURRENT_BATCH_ID_PATH = path.join(TMP_DIR, "current-batch-id");
+function currentBatchIdPath(invocationId) {
+  return path.join(
+    TMP_DIR,
+    invocationId ? `current-batch-${invocationId}` : "current-batch-id"
+  );
+}
 
 let db = null;
 let statements = null;
@@ -300,13 +305,17 @@ function dbReady() {
 }
 
 export function redact(text) {
-  if (!text) return { text: "", count: 0 };
+  if (text === null || text === undefined) return { text, count: 0 };
+  if (text === "") return { text: "", count: 0 };
   let count = 0;
-  let redactedText = text;
+  let redactedText = String(text);
 
   const patterns = [
     /sk-[A-Za-z0-9]{20,}/g,
-    /Bearer [A-Za-z0-9\-._~+/]+=*/g,
+    /\bBearer [A-Za-z0-9\-._~+/]{20,}/g,
+    /ghp_[A-Za-z0-9]{36}/g,
+    /AKIA[A-Z0-9]{16}/g,
+    /\bAuthorization:\s*Basic\s+[A-Za-z0-9+/=]{8,}/gi,
     /-----BEGIN [A-Z ]+-----[\s\S]+?-----END [A-Z ]+-----/g,
   ];
 
@@ -317,22 +326,15 @@ export function redact(text) {
     });
   }
 
-  const lines = redactedText.split("\n").map((line) => {
-    const match = line.match(/^([A-Z_]{4,})=(.{8,})$/);
-    if (!match) return line;
-    const key = match[1];
-    const value = match[2].trim().replace(/^['"]|['"]$/g, "");
-    const looksSecret =
-      value.length > 16 &&
-      /[a-z]/.test(value) &&
-      /[A-Z]/.test(value) &&
-      /\d/.test(value);
-    if (!looksSecret) return line;
-    count += 1;
-    return `${key}=[REDACTED]`;
-  });
+  redactedText = redactedText.replace(
+    /\b(API_KEY|SECRET|TOKEN|PASSWORD|PASSWD)\s*=\s*("[^"\n]*"|'[^'\n]*'|[^\s\n]+)/gi,
+    (_, key) => {
+      count += 1;
+      return `${key}=[REDACTED]`;
+    }
+  );
 
-  return { text: lines.join("\n"), count };
+  return { text: redactedText, count };
 }
 
 export function upsertSession(sessionId, model) {
@@ -356,6 +358,19 @@ export function insertBatch(batchId, sessionId, taskCount) {
 
 export function insertTask(fields) {
   if (!dbReady()) return null;
+  const promptRedaction = redact(fields.prompt);
+  const outputRedaction = redact(fields.output_truncated);
+  const errorRedaction = redact(fields.error_text);
+  const providedRedactionCount = Number(fields.redaction_count ?? 0);
+  const safeProvidedRedactionCount = Number.isFinite(providedRedactionCount)
+    ? providedRedactionCount
+    : 0;
+  const totalRedactionCount =
+    safeProvidedRedactionCount +
+    promptRedaction.count +
+    outputRedaction.count +
+    errorRedaction.count;
+
   const result = statements.insertTask.run({
     invocation_id: fields.invocation_id,
     batch_id: fields.batch_id ?? null,
@@ -367,7 +382,7 @@ export function insertTask(fields) {
     cwd: fields.cwd ?? null,
     prompt_slug: fields.prompt_slug ?? null,
     prompt_hash: fields.prompt_hash ?? null,
-    prompt: fields.prompt ?? null,
+    prompt: promptRedaction.text ?? null,
     url: fields.url ?? null,
     sandbox: fields.sandbox ?? null,
     approval: fields.approval ?? null,
@@ -383,9 +398,9 @@ export function insertTask(fields) {
     output_capped: fields.output_capped ?? null,
     stdout_bytes: fields.stdout_bytes ?? null,
     stderr_bytes: fields.stderr_bytes ?? null,
-    output_truncated: fields.output_truncated ?? null,
-    error_text: fields.error_text ?? null,
-    redaction_count: fields.redaction_count ?? 0,
+    output_truncated: outputRedaction.text ?? null,
+    error_text: errorRedaction.text ?? null,
+    redaction_count: totalRedactionCount,
     token_est: fields.token_est ?? null,
     cost_est_usd: fields.cost_est_usd ?? null,
   });
@@ -394,6 +409,21 @@ export function insertTask(fields) {
 
 export function updateTask(invocationId, fields) {
   if (!dbReady()) return;
+  const promptRedaction = redact(fields.prompt);
+  const outputRedaction = redact(fields.output_truncated);
+  const errorRedaction = redact(fields.error_text);
+  const incrementalRedactionCount =
+    promptRedaction.count + outputRedaction.count + errorRedaction.count;
+
+  let mergedRedactionCount = fields.redaction_count;
+  if (incrementalRedactionCount > 0) {
+    const providedRedactionCount = Number(fields.redaction_count ?? 0);
+    const safeProvidedRedactionCount = Number.isFinite(providedRedactionCount)
+      ? providedRedactionCount
+      : 0;
+    mergedRedactionCount = safeProvidedRedactionCount + incrementalRedactionCount;
+  }
+
   statements.updateTask.run({
     invocation_id: invocationId,
     batch_id: fields.batch_id,
@@ -405,7 +435,7 @@ export function updateTask(invocationId, fields) {
     cwd: fields.cwd,
     prompt_slug: fields.prompt_slug,
     prompt_hash: fields.prompt_hash,
-    prompt: fields.prompt,
+    prompt: promptRedaction.text,
     url: fields.url,
     sandbox: fields.sandbox,
     approval: fields.approval,
@@ -421,9 +451,9 @@ export function updateTask(invocationId, fields) {
     output_capped: fields.output_capped,
     stdout_bytes: fields.stdout_bytes,
     stderr_bytes: fields.stderr_bytes,
-    output_truncated: fields.output_truncated,
-    error_text: fields.error_text,
-    redaction_count: fields.redaction_count,
+    output_truncated: outputRedaction.text,
+    error_text: errorRedaction.text,
+    redaction_count: mergedRedactionCount,
     token_est: fields.token_est,
     cost_est_usd: fields.cost_est_usd,
   });
@@ -508,19 +538,20 @@ export function cleanBatchStatus(batchId) {
   } catch {}
 }
 
-export function writeCurrentBatchId(batchId) {
+export function writeCurrentBatchId(batchId, invocationId) {
   try {
     fs.mkdirSync(TMP_DIR, { recursive: true, mode: 0o700 });
     ensurePrivatePath(TMP_DIR, 0o700);
-    const tempPath = `${CURRENT_BATCH_ID_PATH}.tmp`;
+    const finalPath = currentBatchIdPath(invocationId);
+    const tempPath = `${finalPath}.tmp`;
     fs.writeFileSync(tempPath, batchId, { mode: 0o600 });
-    fs.renameSync(tempPath, CURRENT_BATCH_ID_PATH);
-    ensurePrivatePath(CURRENT_BATCH_ID_PATH, 0o600);
+    fs.renameSync(tempPath, finalPath);
+    ensurePrivatePath(finalPath, 0o600);
   } catch {}
 }
 
-export function clearCurrentBatchId() {
+export function clearCurrentBatchId(invocationId) {
   try {
-    fs.unlinkSync(CURRENT_BATCH_ID_PATH);
+    fs.unlinkSync(currentBatchIdPath(invocationId));
   } catch {}
 }

@@ -37,12 +37,9 @@ Use this Codex prompt:
 You are capturing a git session snapshot for this repository.
 
 Run these commands and read their output:
-  git branch --show-current
-  git rev-parse --short HEAD
   git log --oneline -20
-  git status --short
+  git status
   git diff HEAD
-  git stash list
 
 If .SESSION.md exists at the repo root, read it. Use only the previous
 "## Next Steps" section to carry forward unfinished items.
@@ -52,7 +49,7 @@ Produce output in this EXACT format (no extra prose):
 # Session Snapshot — [YYYY-MM-DD HH:MM local time]
 
 ## Branch
-[branch-name] @ [short-hash]
+[branch-name from `git status`] @ [short-hash from first entry in `git log --oneline -20`]
 
 ## What Was Done
 [bullet list of commits made since the hash in the previous snapshot's "## Branch"
@@ -60,7 +57,7 @@ line, or last 10 commits if no previous snapshot exists]
 [if no new commits since last snapshot: "No new commits since last snapshot"]
 
 ## In Progress
-[bullet list from git status --short, grouped: new files / modified / deleted]
+[bullet list from `git status`, grouped: new files / modified / deleted]
 [if working tree is clean: "Working tree clean"]
 
 ## Next Steps
@@ -69,26 +66,18 @@ line, or last 10 commits if no previous snapshot exists]
 [if nothing: "(none noted)"]
 
 ## Notes
-[stashed changes, detached HEAD, or other notable git state]
+[detached HEAD or other notable git state visible from the command output]
 [omit this section entirely if nothing notable]
 
 Keep output under 60 lines total.
 ---
 
-If --log is set, append this extension to the Codex prompt:
-
----
-Also read ~/.claude/logs/delegations.jsonl. Extract the last N entries (N = LOG_N,
-default 5 if no number given after --log).
-
-Add this section at the end of your output:
-
-## Recent Audit
-[one bullet per entry: [sandbox] — [short task description, ≤10 words]]
----
-
 After Codex returns:
 - Display the snapshot under "## Session Snapshot"
+- If --log is set, Claude (not Codex) reads `~/.claude/logs/delegations.jsonl` directly,
+  extracts the last N entries (N = LOG_N, default 5), and appends:
+  `## Recent Audit`
+  [one bullet per entry: [sandbox] — [short task description, ≤10 words]]
 - If --append AND .SESSION.md exists:
     new content = [Codex output] + "\n\n---\n\n" + [existing .SESSION.md contents]
     Write new content to .SESSION.md

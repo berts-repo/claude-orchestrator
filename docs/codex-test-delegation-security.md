@@ -49,16 +49,18 @@ Test writing and test running must be delegated as separate phases because they 
 - User executes locally.
 - No sandbox network access is required during delegation.
 
-#### Option B: scoped venv with hash-pinned dependencies
+#### Option B: scoped venv with hash-pinned dependencies (elevated risk)
 
-- Sandbox: `workspace-write`
+- Sandbox: `danger-full-access`
 - Approval policy: `untrusted` (prompt before each shell command)
+- Warning: this option allows networked dependency installation and should only be used when Option A or C cannot be used.
 - Flow:
   - Create `.venv`
   - Run `pip install --require-hashes -r requirements.txt`
   - Run pytest from the venv
 - Rationale:
-  - Hash pinning prevents package substitution attacks.
+  - `workspace-write` cannot reach package indexes, so installs require `danger-full-access`.
+  - Hash pinning reduces package substitution attacks.
   - `untrusted` ensures command-by-command visibility.
 
 #### Option C: read-only run (fastest)
@@ -79,7 +81,7 @@ Test writing and test running must be delegated as separate phases because they 
 |-----------|------|---------|-----------------|
 | Test writing | codex | workspace-write | on-failure |
 | Test running (pre-installed deps) | codex | read-only | never |
-| Test running (needs pip install) | codex | workspace-write | untrusted |
+| Test running (needs pip install) | codex | danger-full-access | untrusted |
 
 ## Portability recommendation
 

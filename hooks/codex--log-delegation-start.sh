@@ -29,6 +29,10 @@ else
   prompt=$(echo "$payload" | jq -r '.tool_input.prompt // .tool_input.query // .tool_input.url // ""')
 fi
 prompt_hash=$(codex_log_correlation_key "$tool_name" "$prompt")
+request_nonce=$(codex_log_extract_request_nonce "$payload")
+if [[ -z "$request_nonce" ]]; then
+  request_nonce=$(codex_log_random_nonce)
+fi
 
 # Write epoch milliseconds to a pending marker file
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -37,6 +41,6 @@ else
   epoch_ms=$(date +%s%3N 2>/dev/null || date +%s000)
 fi
 
-printf '%s' "$epoch_ms" > "${PENDING_DIR}/${prompt_hash}"
+printf '%s' "$epoch_ms" > "${PENDING_DIR}/${prompt_hash}-${request_nonce}"
 
 exit 0

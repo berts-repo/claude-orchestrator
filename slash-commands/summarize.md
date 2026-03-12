@@ -56,7 +56,7 @@ Confirm to the user: "Summary saved to .SUMMARY.md"
 
 ## Audit DB Context
 
-Also instruct Claude to query `~/.claude/audit.db` for audit history relevant to this project:
+Claude must query `~/.claude/audit.db` directly for audit history relevant to this project (do not delegate `~/.claude/*` access to Codex):
 - Filter tasks where `cwd` equals the current working directory, or `project` matches the current project name
 - Show last 20 tasks for this project: `prompt_slug`, `status`, `duration_ms`, `started_at`
 - Use this data to improve the session summary with what was actually delegated

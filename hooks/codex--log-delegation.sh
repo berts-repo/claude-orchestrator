@@ -48,6 +48,19 @@ make_summary() {
   fi
 }
 
+# Redact common secret formats from text before any persistent logging.
+redact_text() {
+  local input="${1-}"
+  printf '%s' "$input" | perl -0777 -pe '
+    s/sk-[A-Za-z0-9]{20,}/[REDACTED]/g;
+    s/\bBearer [A-Za-z0-9\-._~+\/]{20,}/Bearer [REDACTED]/g;
+    s/ghp_[A-Za-z0-9]{36}/[REDACTED]/g;
+    s/AKIA[A-Z0-9]{16}/[REDACTED]/g;
+    s/\b(API_KEY|SECRET|TOKEN|PASSWORD|PASSWD)\s*=\s*("[^"\n]*"|'\''[^'\''\n]*'\''|[^\s\n]+)/$1=[REDACTED]/ig;
+    s/\bAuthorization:\s*Basic\s+[A-Za-z0-9+\/=]{8,}/Authorization: Basic [REDACTED]/ig;
+  '
+}
+
 # Generate a stable per-call id when threadId is unavailable.
 generate_call_id() {
   local prefix="${1:-call}"
@@ -111,9 +124,17 @@ compute_start_and_duration() {
   local prompt_text="$1"
   local prompt_hash
   prompt_hash=$(codex_log_correlation_key "$tool_name" "$prompt_text")
+  local request_nonce
+  request_nonce=$(codex_log_extract_request_nonce "$payload")
 
-  local pending_file="${PENDING_DIR}/${prompt_hash}"
-  if [[ -f "$pending_file" ]]; then
+  local pending_file=""
+  if [[ -n "$request_nonce" ]]; then
+    pending_file="${PENDING_DIR}/${prompt_hash}-${request_nonce}"
+  else
+    pending_file=$(ls -1tr "${PENDING_DIR}/${prompt_hash}-"* 2>/dev/null | head -1 || true)
+  fi
+
+  if [[ -n "$pending_file" && -f "$pending_file" ]]; then
     local start_ms
     start_ms=$(cat "$pending_file")
     rm -f "$pending_file"
@@ -160,6 +181,7 @@ if [[ "$tool_type" == "codex" ]]; then
   fi
 
   duration_ms=$(compute_start_and_duration "$prompt")
+  prompt=$(redact_text "$prompt")
 
   if [[ "$is_parallel" == "true" ]]; then
     task_count=$(echo "$prompt" | jq 'length')
@@ -170,12 +192,14 @@ if [[ "$tool_type" == "codex" ]]; then
     cwd=$(echo "$prompt" | jq -r '.[0].cwd // "unknown"')
     thread_id="parallel-$(date +%s)-$$"
     response_content=$(echo "$tool_response" | jq -r 'if type == "array" then (map(.content // "") | join("\n")) elif type == "string" then . else tostring end' 2>/dev/null || echo "")
+    response_content=$(redact_text "$response_content")
     success=$(codex_response_success "$tool_response")
   else
     sandbox=$(echo "$tool_input" | jq -r '.sandbox // "default"')
     approval_policy=$(echo "$tool_input" | jq -r '.["approval-policy"] // "default"')
     cwd=$(echo "$tool_input" | jq -r '.cwd // "unknown"')
     response_content=$(echo "$tool_response" | jq -r '.content // ""' 2>/dev/null || echo "")
+    response_content=$(redact_text "$response_content")
     success=$(codex_response_success "$tool_response")
     if [[ "$thread_id" == "unknown" || "$thread_id" == "null" || -z "$thread_id" ]]; then
       thread_id=$(generate_call_id "codex")
@@ -261,39 +285,22 @@ if [[ "$tool_type" == "codex" ]]; then
 elif [[ "$tool_type" == "web" || "$tool_type" == "gemini" ]]; then
   query=$(echo "$tool_input" | jq -r '.query // .url // .prompt // ""')
   response_content=$(echo "$tool_response" | jq -r 'if type == "string" then . else (tostring) end' 2>/dev/null || echo "$tool_response")
+  duration_ms=$(compute_start_and_duration "$query")
+  query=$(redact_text "$query")
+  response_content=$(redact_text "$response_content")
 
   summary=$(make_summary "$query")
-  duration_ms=$(compute_start_and_duration "$query")
 
   gemini_success="false"
   gemini_parse_error="false"
-  gemini_response_raw="${CLAUDE_TOOL_RESPONSE:-}"
+  gemini_response_raw="$tool_response"
 
   if [[ -z "$gemini_response_raw" ]]; then
     gemini_parse_error="true"
   elif ! echo "$gemini_response_raw" | jq -e '.' >/dev/null 2>&1; then
     gemini_parse_error="true"
   else
-    gemini_is_error=$(echo "$gemini_response_raw" | jq -r 'if (type == "object" and .isError == true) then "true" else "false" end')
-    gemini_nonzero_exit=$(echo "$gemini_response_raw" | jq -r '
-      [
-        .. | objects |
-        (.exit_code? // .exitCode? // .["exit-code"]? // empty) |
-        (try tonumber catch empty) |
-        select(. != 0)
-      ] | length > 0
-    ')
-    gemini_has_expected_result=$(echo "$gemini_response_raw" | jq -r '
-      if type == "object" then
-        (has("content") or has("result") or has("response") or has("text"))
-      else
-        false
-      end
-    ')
-
-    if [[ "$gemini_is_error" == "false" && "$gemini_nonzero_exit" == "false" && "$gemini_has_expected_result" == "true" ]]; then
-      gemini_success="true"
-    fi
+    gemini_success=$(codex_response_success "$gemini_response_raw")
   fi
 
   # Gemini has no threadId, generate a unique id

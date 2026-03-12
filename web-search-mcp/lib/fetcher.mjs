@@ -1,4 +1,6 @@
 import { lookup, resolve4, resolve6 } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
 const USER_AGENT = "web-search-mcp/0.1 (MCP fetch tool)";
@@ -9,51 +11,145 @@ function errorWithCode(message, code) {
   return err;
 }
 
-function isPrivateIpv4(hostname) {
-  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return false;
-  const parts = hostname.split(".").map(Number);
-  if (parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return false;
-  const [a, b] = parts;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
+const IPV4_DENY_CIDRS = [
+  "0.0.0.0/8",
+  "10.0.0.0/8",
+  "100.64.0.0/10",
+  "127.0.0.0/8",
+  "169.254.0.0/16",
+  "172.16.0.0/12",
+  "192.0.0.0/24",
+  "192.0.2.0/24",
+  "192.168.0.0/16",
+  "198.18.0.0/15",
+  "198.51.100.0/24",
+  "203.0.113.0/24",
+  "224.0.0.0/4",
+  "240.0.0.0/4",
+  "255.255.255.255/32",
+];
+
+const IPV6_DENY_CIDRS = [
+  "::1/128",
+  "fc00::/7",
+  "fe80::/10",
+  "::ffff:0:0/96",
+  "64:ff9b::/96",
+  "100::/64",
+  "2001::/23",
+  "2001:db8::/32",
+];
+
+function normalizeIpLiteral(ip) {
+  return ip.toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+function parseIpv4ToBytes(ip) {
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return null;
+  const parts = ip.split(".").map(Number);
+  if (parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return null;
+  return Uint8Array.from(parts);
+}
+
+function parseIpv6ToBytes(ip) {
+  const parts = ip.split("::");
+  if (parts.length > 2) return null;
+  const [leftRaw, rightRaw] = parts;
+
+  const parseSide = (side) => {
+    if (!side) return [];
+    const groups = [];
+    for (const part of side.split(":")) {
+      if (part.includes(".")) {
+        const ipv4Bytes = parseIpv4ToBytes(part);
+        if (!ipv4Bytes) return null;
+        groups.push((ipv4Bytes[0] << 8) | ipv4Bytes[1], (ipv4Bytes[2] << 8) | ipv4Bytes[3]);
+        continue;
+      }
+      if (!/^[0-9a-f]{1,4}$/i.test(part)) return null;
+      groups.push(Number.parseInt(part, 16));
+    }
+    return groups;
+  };
+
+  const left = parseSide(leftRaw);
+  const right = parseSide(rightRaw);
+  if (!left || !right) return null;
+
+  const hasCompression = ip.includes("::");
+  if (!hasCompression && left.length !== 8) return null;
+  if (hasCompression && left.length + right.length > 8) return null;
+
+  const missing = hasCompression ? 8 - (left.length + right.length) : 0;
+  const groups = [...left, ...Array(missing).fill(0), ...right];
+  if (groups.length !== 8) return null;
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < groups.length; i += 1) {
+    bytes[i * 2] = (groups[i] >> 8) & 0xff;
+    bytes[i * 2 + 1] = groups[i] & 0xff;
+  }
+  return bytes;
+}
+
+function parseIpToBytes(ipRaw) {
+  const ip = normalizeIpLiteral(ipRaw);
+  if (isIP(ip) === 4) return parseIpv4ToBytes(ip);
+  if (isIP(ip) === 6) return parseIpv6ToBytes(ip);
+  return null;
+}
+
+function cidrContains(ipRaw, cidr) {
+  const [network, prefixLengthRaw] = cidr.split("/");
+  const prefixLength = Number(prefixLengthRaw);
+  if (!Number.isInteger(prefixLength)) return false;
+
+  const ipBytes = parseIpToBytes(ipRaw);
+  const networkBytes = parseIpToBytes(network);
+  if (!ipBytes || !networkBytes || ipBytes.length !== networkBytes.length) return false;
+
+  const totalBits = ipBytes.length * 8;
+  if (prefixLength < 0 || prefixLength > totalBits) return false;
+
+  const fullBytes = Math.floor(prefixLength / 8);
+  const remainderBits = prefixLength % 8;
+
+  for (let i = 0; i < fullBytes; i += 1) {
+    if (ipBytes[i] !== networkBytes[i]) return false;
+  }
+
+  if (remainderBits === 0) return true;
+
+  const mask = (0xff << (8 - remainderBits)) & 0xff;
+  return (ipBytes[fullBytes] & mask) === (networkBytes[fullBytes] & mask);
+}
+
+function isDeniedIpAddress(addressRaw) {
+  const address = normalizeIpLiteral(addressRaw);
+  const family = isIP(address);
+  if (family === 4) return IPV4_DENY_CIDRS.some((cidr) => cidrContains(address, cidr));
+  if (family === 6) return IPV6_DENY_CIDRS.some((cidr) => cidrContains(address, cidr));
   return false;
 }
 
-function extractMappedIpv4(hostname) {
-  const match = hostname.match(/^::ffff:(.+)$/i);
-  if (!match) return null;
-  const tail = match[1];
-
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(tail)) {
-    return tail;
-  }
-
-  const parts = tail.split(":");
-  if (parts.length !== 2) return null;
-  const hextets = parts.map((part) => Number.parseInt(part, 16));
-  if (hextets.some((n) => Number.isNaN(n) || n < 0 || n > 0xffff)) return null;
-
-  const [a, b] = hextets;
-  const octets = [(a >> 8) & 0xff, a & 0xff, (b >> 8) & 0xff, b & 0xff];
-  return octets.join(".");
-}
-
 function assertPublicAddress(addressRaw) {
-  const address = addressRaw.toLowerCase();
-  const mappedIpv4 = extractMappedIpv4(address);
-  if (
-    isPrivateIpv4(address) ||
-    address === "::1" ||
-    address.startsWith("fc") ||
-    address.startsWith("fd") ||
-    address.startsWith("fe80") ||
-    (mappedIpv4 && isPrivateIpv4(mappedIpv4))
-  ) {
+  if (isDeniedIpAddress(addressRaw)) {
     throw errorWithCode("URL not allowed: resolved to a private/loopback IP", "ERR_URL_NOT_ALLOWED");
   }
+}
+
+function createPinnedLookup(hostname, pinnedAddress) {
+  const normalizedHostname = hostname.toLowerCase().replace(/\.+$/, "");
+  const normalizedPinnedAddress = normalizeIpLiteral(pinnedAddress);
+
+  return (requestedHostname, _options, callback) => {
+    const normalizedRequested = requestedHostname.toLowerCase().replace(/\.+$/, "");
+    if (normalizedRequested !== normalizedHostname) {
+      callback(errorWithCode("URL not allowed: unexpected DNS lookup target", "ERR_URL_NOT_ALLOWED"));
+      return;
+    }
+    callback(null, normalizedPinnedAddress, isIP(normalizedPinnedAddress));
+  };
 }
 
 async function resolveSafeFetchAddress(urlObj) {
@@ -71,17 +167,47 @@ async function resolveSafeFetchAddress(urlObj) {
   assertPublicAddress(resolvedAddress);
 
   const pinnedUrlObj = new URL(urlObj);
-  pinnedUrlObj.hostname = resolvedAddress;
+  let pinnedLookup;
+  const shouldPinIp = urlObj.protocol === "http:" && isIP(ipv6Hostname) === 0;
+  if (shouldPinIp) {
+    pinnedUrlObj.hostname = resolvedAddress;
+  }
+  if (urlObj.protocol === "https:" && isIP(ipv6Hostname) === 0) {
+    pinnedLookup = createPinnedLookup(hostname, resolvedAddress);
+  }
+
   return {
-    hostHeader: urlObj.host,
+    hostHeader: shouldPinIp ? urlObj.host : undefined,
+    pinnedLookup,
     pinnedUrlObj,
   };
+}
+
+async function sendRequest(urlObj, { signal, headers, pinnedLookup }) {
+  const requestFn = urlObj.protocol === "https:" ? httpsRequest : httpRequest;
+  const normalizedHostname = normalizeIpLiteral(urlObj.hostname);
+  const servername = normalizeIpLiteral(urlObj.hostname).replace(/\.+$/, "");
+  const requestOptions = {
+    method: "GET",
+    hostname: normalizedHostname,
+    ...(urlObj.port ? { port: Number(urlObj.port) } : {}),
+    path: `${urlObj.pathname}${urlObj.search}`,
+    headers,
+    signal,
+    ...(pinnedLookup ? { lookup: pinnedLookup } : {}),
+    ...(urlObj.protocol === "https:" && pinnedLookup ? { servername } : {}),
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = requestFn(requestOptions, (res) => resolve(res));
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 async function assertSafeUrl(urlObj) {
   const hostname = urlObj.hostname.toLowerCase().replace(/\.+$/, "");
   const ipv6Hostname = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
-  const mappedIpv4 = extractMappedIpv4(ipv6Hostname);
 
   if (hostname === "localhost") {
     throw errorWithCode("URL not allowed: localhost is blocked", "ERR_URL_NOT_ALLOWED");
@@ -95,21 +221,8 @@ async function assertSafeUrl(urlObj) {
   if (hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]" || ipv6Hostname === "::1") {
     throw errorWithCode("URL not allowed: loopback address is blocked", "ERR_URL_NOT_ALLOWED");
   }
-  if (mappedIpv4 && isPrivateIpv4(mappedIpv4)) {
+  if (isDeniedIpAddress(hostname) || isDeniedIpAddress(ipv6Hostname)) {
     throw errorWithCode("URL not allowed: private/link-local IP is blocked", "ERR_URL_NOT_ALLOWED");
-  }
-  if (isPrivateIpv4(hostname)) {
-    throw errorWithCode("URL not allowed: private/link-local IP is blocked", "ERR_URL_NOT_ALLOWED");
-  }
-  if (
-    hostname.startsWith("[fc") ||
-    hostname.startsWith("[fd") ||
-    hostname.startsWith("[fe80") ||
-    ipv6Hostname.startsWith("fc") ||
-    ipv6Hostname.startsWith("fd") ||
-    ipv6Hostname.startsWith("fe80")
-  ) {
-    throw errorWithCode("URL not allowed: private/link-local IPv6 is blocked", "ERR_URL_NOT_ALLOWED");
   }
 
   if (isIP(ipv6Hostname) !== 0) return;
@@ -162,31 +275,30 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     let currentUrlObj = urlObj;
     let redirectCount = 0;
     while (true) {
-      const { pinnedUrlObj, hostHeader } = await resolveSafeFetchAddress(currentUrlObj);
-      response = await fetch(pinnedUrlObj, {
-        method: "GET",
-        redirect: "manual",
-        credentials: "omit",
+      const { pinnedUrlObj, hostHeader, pinnedLookup } = await resolveSafeFetchAddress(currentUrlObj);
+      response = await sendRequest(pinnedUrlObj, {
         signal: controller.signal,
+        pinnedLookup,
         headers: {
-          Host: hostHeader,
           "User-Agent": USER_AGENT,
+          ...(hostHeader ? { Host: hostHeader } : {}),
         },
       });
 
       if (
-        (response.status === 301 ||
-          response.status === 302 ||
-          response.status === 303 ||
-          response.status === 307 ||
-          response.status === 308) &&
-        response.headers.get("location")
+        (response.statusCode === 301 ||
+          response.statusCode === 302 ||
+          response.statusCode === 303 ||
+          response.statusCode === 307 ||
+          response.statusCode === 308) &&
+        response.headers.location
       ) {
         if (redirectCount >= 10) {
           throw errorWithCode("Too many redirects", "ERR_TOO_MANY_REDIRECTS");
         }
+        response.destroy();
         redirectCount += 1;
-        const nextUrlObj = new URL(response.headers.get("location"), currentUrlObj);
+        const nextUrlObj = new URL(response.headers.location, currentUrlObj);
         if (nextUrlObj.protocol !== "http:" && nextUrlObj.protocol !== "https:") {
           throw errorWithCode("URL scheme not allowed", "ERR_URL_NOT_ALLOWED");
         }
@@ -211,27 +323,21 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     }
     await assertSafeUrl(finalUrlObj);
 
-    const contentType = response.headers.get("content-type") || "";
+    const contentType = typeof response.headers["content-type"] === "string" ? response.headers["content-type"] : "";
     const lowerType = contentType.toLowerCase();
     if (!lowerType.includes("text/html") && !lowerType.includes("text/plain")) {
       throw errorWithCode("unsupported content type", "ERR_UNSUPPORTED_CONTENT_TYPE");
     }
 
-    if (!response.body) {
-      return { html: "", contentType, finalUrl };
-    }
-
-    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let total = 0;
     let html = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    for await (const chunk of response) {
+      const value = chunk instanceof Uint8Array ? chunk : Buffer.from(chunk);
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel();
+        response.destroy();
         throw errorWithCode("Response exceeded size limit", "ERR_RESPONSE_TOO_LARGE");
       }
       html += decoder.decode(value, { stream: true });

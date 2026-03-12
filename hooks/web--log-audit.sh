@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # HOOK_EVENT: PostToolUse
-# HOOK_MATCHER: mcp__delegate-web__fetch|mcp__delegate-web__search
+# HOOK_MATCHER: mcp__delegate_web__fetch|mcp__delegate_web__search
 # HOOK_TIMEOUT: 10
 set -euo pipefail
 
@@ -16,8 +16,8 @@ payload="$(cat || true)"
 
 tool_name="$(printf '%s' "$payload" | jq -r '.tool_name // ""' 2>/dev/null || echo "")"
 case "$tool_name" in
-  mcp__delegate-web__fetch) tool_type="web-fetch" ;;
-  mcp__delegate-web__search) tool_type="web-search" ;;
+  mcp__delegate_web__fetch) tool_type="web-fetch" ;;
+  mcp__delegate_web__search) tool_type="web-search" ;;
   *) exit 0 ;;
 esac
 
