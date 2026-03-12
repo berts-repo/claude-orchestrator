@@ -106,6 +106,7 @@ invalid cwd '...'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED
 
 Remediation:
 - Set `CODEX_POOL_ALLOWED_CWD_ROOTS` to include your project root(s)
+- Or run `/audit add-root <absolute-path>` to append a root to delegate MCP config, then restart Claude Code
 - Ensure delegated task `cwd` uses an absolute path inside one of those roots
 
 ---
@@ -153,6 +154,7 @@ Primary audit storage is SQLite at `~/.claude/audit.db` (see `codex-delegation-m
 - Stores task/delegation records for Codex and web calls
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
+- Stores `output_truncated` for all tasks and `output_full` when full-output storage is enabled
 - Use `/audit` for direct SQLite queries/config updates
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
@@ -185,6 +187,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 | `/audit` | Query and browse the SQLite audit log (`~/.claude/audit.db`) |
 | `/clauded` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
 | `/monitor` | Dashboard showing delegation stats and security event analysis |
+| `/report` | Generate a concise monitoring report from audit DB + security events |
 | `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
 | `/session` | Capture or restore session snapshots in `.SESSION.md` |
 
@@ -352,4 +355,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
-*Last updated: 2026-03-05*
+*Last updated: 2026-03-12*

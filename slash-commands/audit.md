@@ -13,9 +13,10 @@ Parse `$ARGUMENTS` as one of these subcommands:
 Use Bash with `sqlite3` for all DB access:
 - `sqlite3 ~/.claude/audit.db "..."`
 
-If `~/.claude/audit.db` does not exist, print:
-`Audit DB not found at ~/.claude/audit.db`
-Then stop.
+For DB-backed subcommands (`set-project`, `list-projects`, `set`, `status`, `log`, `query`):
+- If `~/.claude/audit.db` does not exist, print:
+  `Audit DB not found at ~/.claude/audit.db`
+- Then stop.
 
 For `query <sql>`:
 - Only allow read-only `SELECT` statements.
@@ -34,10 +35,11 @@ For `list-projects`:
 - Sort by project name.
 
 For `set <key> <value>`:
-- Allowed keys only: `prompt-full-days`, `output-days`, `row-days`, `max-db-mb`, `full-output-storage`, `full-prompt-storage`.
+- Allowed keys only: `prompt-full-days`, `output-days`, `output-full-days`, `row-days`, `max-db-mb`, `full-output-storage`, `full-prompt-storage`.
 - Map to DB config keys:
   - `prompt-full-days` -> `prompt_full_days`
   - `output-days` -> `output_days`
+  - `output-full-days` -> `output_full_days`
   - `row-days` -> `row_days`
   - `max-db-mb` -> `max_db_mb`
   - `full-output-storage` -> `full_output_storage`
@@ -48,6 +50,7 @@ For `status`:
 - Show current config values for:
   - `prompt_full_days`
   - `output_days`
+  - `output_full_days`
   - `row_days`
   - `max_db_mb`
   - `full_output_storage`

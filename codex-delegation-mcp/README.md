@@ -39,7 +39,9 @@ For `codex_parallel`, all subprocesses start simultaneously via `Promise.all`. W
 codex-delegation-mcp/
 ├── README.md        # This file
 ├── server.js        # MCP server — registers codex and codex_parallel tools
-├── package.json     # Dependencies: @modelcontextprotocol/sdk, zod
+├── db.js            # SQLite audit DB schema, retention, and task write helpers
+├── config.json      # Allowed/blocked cwd roots
+├── package.json     # Dependencies: @modelcontextprotocol/sdk, better-sqlite3, zod
 └── node_modules/    # Installed by npm install
 ```
 
@@ -86,7 +88,9 @@ Make the server executable (it uses a `#!/usr/bin/env node` shebang):
 
 ```bash
 chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+claude mcp add -s user delegate \
+  --env "CODEX_POOL_ALLOWED_CWD_ROOTS=/home/you/git" \
+  -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 ```
 
 Verify registration:
@@ -129,6 +133,7 @@ Run a single Codex task in an isolated subprocess.
 | `approval-policy` | string | No | `on-failure` | When Codex asks for approval |
 | `model` | string | No | — | Model override (e.g. `o4-mini`) |
 | `base-instructions` | string | No | — | Replace default system instructions |
+| `skip-git-repo-check` | boolean | No | `false` | Pass `--skip-git-repo-check` to `codex exec` (use when `cwd` is not a git repo) |
 
 **Example:**
 
@@ -250,6 +255,8 @@ Parallel batch: 3 tasks, total wall time 12340ms
 | `OPENAI_API_KEY` | — | OpenAI API key (checked before `~/.codex/auth.json`) |
 | `CODEX_POOL_TIMEOUT_MS` | `300000` (5 min) | Subprocess timeout in milliseconds |
 | `CODEX_BIN` | `codex` | Path to the Codex CLI binary |
+| `CODEX_POOL_ALLOWED_CWD_ROOTS` | from `config.json` (+ `$HOME` fallback) | Comma-separated absolute cwd roots allowed for delegated tasks |
+| `CODEX_ALLOW_DANGER_SANDBOX` | `0` | Set to `1` to permit `sandbox: "danger-full-access"` |
 
 ---
 

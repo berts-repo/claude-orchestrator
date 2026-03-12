@@ -16,7 +16,7 @@ Each call spawns an independent `codex exec` process. `codex_parallel` fans out 
 - `mcp__delegate__codex_parallel` — array of tasks (`tasks: [...]`), all run in parallel
 - `codex-reply` is **removed** — processes are ephemeral; pass full context per call
 
-Always set `cwd` to an absolute path. Allowed and blocked paths are configured in `codex-delegation-mcp/config.json` — edit that file to add/remove roots.
+Always set `cwd` to an absolute path. Allowed and blocked paths come from `codex-delegation-mcp/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-roots` and `/audit add-root <absolute-path>` to manage env roots.
 
 | Task Type | Tool | Sandbox | Approval Policy |
 |-----------|------|---------|-----------------|
