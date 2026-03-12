@@ -6,6 +6,8 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `set <key> <value>`
 - `status`
 - `query <sql>`
+- `add-root <path>`
+- `list-roots`
 
 Use Bash with `sqlite3` for all DB access:
 - `sqlite3 ~/.claude/audit.db "..."`
@@ -55,6 +57,33 @@ For `status`:
   - Slowest parallel batches
   - Recall by prompt slug keyword
   - Cost estimate this month
+
+For `list-roots`:
+- Run: `python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.claude.json'))); print(d.get('mcpServers',{}).get('delegate',{}).get('env',{}).get('CODEX_POOL_ALLOWED_CWD_ROOTS',''))"`
+- Split the result on commas and display as a numbered list.
+- If empty or missing, print: `No roots configured. Run setup.sh to initialize.`
+
+For `add-root <path>`:
+- Validate `<path>` starts with `/`. If not, print: `Error: path must be absolute.` and stop.
+- Run this Python snippet via Bash to append the path (deduplicated) and write back:
+  ```bash
+  python3 -c "
+  import json, os
+  p = os.path.expanduser('~/.claude.json')
+  d = json.load(open(p))
+  env = d.setdefault('mcpServers', {}).setdefault('delegate', {}).setdefault('env', {})
+  roots = [r.strip() for r in env.get('CODEX_POOL_ALLOWED_CWD_ROOTS', '').split(',') if r.strip()]
+  new = '<path>'
+  if new not in roots:
+      roots.append(new)
+  env['CODEX_POOL_ALLOWED_CWD_ROOTS'] = ','.join(roots)
+  open(p, 'w').write(json.dumps(d, indent=2) + chr(10))
+  print('Added:', new)
+  print('All roots:', env['CODEX_POOL_ALLOWED_CWD_ROOTS'])
+  "
+  ```
+  (Replace `<path>` with the actual argument before running.)
+- Print confirmation and remind the user: **Restart Claude Code for the change to take effect.**
 
 Output requirements:
 - Use clean markdown tables where applicable.
