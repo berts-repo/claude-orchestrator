@@ -106,6 +106,7 @@ function parseAllowedCwdRoots() {
   const roots = [...defaultRoots, ...(configured ? configured.split(",") : [])]
     .map((root) => root.trim())
     .filter(Boolean)
+    .map((root) => expandHomePath(root))
     .filter((root) => path.isAbsolute(root))
     .map((root) => toCanonicalPath(path.resolve(root)));
   return Array.from(new Set(roots));
@@ -146,6 +147,10 @@ function toFailureReason(result) {
 function toStoredOutput(result) {
   const merged = [result.stdoutText ?? "", result.stderrText ?? ""].filter(Boolean).join("\n");
   return merged.slice(0, 2048);
+}
+
+function toStoredOutputFull(result) {
+  return [result.stdoutText ?? "", result.stderrText ?? ""].filter(Boolean).join("\n");
 }
 
 function toStoredError(result) {
@@ -224,7 +229,14 @@ const TaskSchema = z.object({
 });
 
 const ParallelSchema = z.object({
-  tasks: z.preprocess(val => typeof val === 'string' ? JSON.parse(val) : val, z.array(TaskSchema).min(1).max(10)).describe("Tasks to run in parallel (max 10)"),
+  tasks: z.preprocess((val) => {
+    if (typeof val !== "string") return val;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }, z.array(TaskSchema).min(1).max(10)).describe("Tasks to run in parallel (max 10)"),
 });
 
 // ── Subprocess runner ──────────────────────────────────────────────────────
@@ -395,8 +407,12 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
 }
 
 function isWithinRoot(targetPath, rootPath) {
-  const rel = path.relative(rootPath, targetPath);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedRoot = path.resolve(rootPath);
+  const rootPrefix = normalizedRoot.endsWith(path.sep)
+    ? normalizedRoot
+    : `${normalizedRoot}${path.sep}`;
+  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(rootPrefix);
 }
 
 
@@ -437,9 +453,7 @@ function normalizeTask(task, taskLabel = "task") {
       `${taskLabel}: invalid cwd '${normalizedCwd}'. Sensitive home directory '${blockedHomePath}' is not allowed.`
     );
   }
-  const blockedRoot = config.blockedPaths.find(
-    (blocked) => normalizedCwd === blocked || normalizedCwd.startsWith(`${blocked}/`)
-  );
+  const blockedRoot = config.blockedPaths.find((blocked) => isWithinRoot(normalizedCwd, blocked));
   if (blockedRoot) {
     throw new Error(
       `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (codex-delegation-mcp/config.json).`
@@ -679,9 +693,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       promptValue = redacted.text;
       redactionCount += redacted.count;
     }
-    if (failed || shouldStoreFullOutput(project)) {
+    {
       const redacted = redact(toStoredOutput(result));
       outputValue = redacted.text;
+      redactionCount += redacted.count;
+    }
+    let outputFullValue = null;
+    if (shouldStoreFullOutput(project)) {
+      const redacted = redact(toStoredOutputFull(result));
+      outputFullValue = redacted.text;
       redactionCount += redacted.count;
     }
     if (failed) {
@@ -703,6 +723,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         stderr_bytes: result.stderrBytes,
         prompt: promptValue,
         output_truncated: outputValue,
+        output_full: outputFullValue,
         error_text: errorText,
         redaction_count: redactionCount,
       });
@@ -829,9 +850,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             promptValue = redacted.text;
             redactionCount += redacted.count;
           }
-          if (failed || shouldStoreFullOutput(project)) {
+          {
             const redacted = redact(toStoredOutput(result));
             outputValue = redacted.text;
+            redactionCount += redacted.count;
+          }
+          let outputFullValue = null;
+          if (shouldStoreFullOutput(project)) {
+            const redacted = redact(toStoredOutputFull(result));
+            outputFullValue = redacted.text;
             redactionCount += redacted.count;
           }
           if (failed) {
@@ -859,6 +886,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               stderr_bytes: result.stderrBytes,
               prompt: promptValue,
               output_truncated: outputValue,
+              output_full: outputFullValue,
               error_text: errorText,
               redaction_count: redactionCount,
             });

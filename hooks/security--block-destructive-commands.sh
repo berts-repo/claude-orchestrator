@@ -39,6 +39,7 @@ contains_token() {
   local needle="$1"
   local token
   for token in "${tokens[@]}"; do
+    token="${token##*/}"
     if [[ "$token" == "$needle" ]]; then
       return 0
     fi
@@ -66,7 +67,7 @@ git_has_subcommand() {
   local subcommand="$1"
   local i
   for ((i = 0; i < ${#tokens[@]} - 1; i++)); do
-    if [[ "${tokens[$i]}" == "git" && "${tokens[$((i + 1))]}" == "$subcommand" ]]; then
+    if [[ "${tokens[$i]##*/}" == "git" && "${tokens[$((i + 1))]}" == "$subcommand" ]]; then
       return 0
     fi
   done

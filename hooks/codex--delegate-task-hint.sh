@@ -8,7 +8,10 @@
 set -euo pipefail
 
 payload="$(cat)"
-prompt="$(echo "$payload" | jq -r '.prompt // ""')"
+if ! prompt="$(printf '%s' "$payload" | jq -er '.prompt // empty' 2>/dev/null)"; then
+  # If payload is malformed or prompt is missing, pass through.
+  exit 0
+fi
 
 # Detect imperative prompts targeting code work that belongs in Codex.
 # Patterns are intentionally specific to avoid false positives on questions

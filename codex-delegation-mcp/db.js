@@ -101,6 +101,13 @@ function initSchema(conn) {
   `);
 }
 
+export function migrateSchema(conn) {
+  const cols = new Set(conn.prepare("PRAGMA table_info(tasks)").all().map((c) => c.name));
+  if (!cols.has("output_full")) {
+    conn.exec("ALTER TABLE tasks ADD COLUMN output_full TEXT");
+  }
+}
+
 function initDefaults(conn) {
   const count = conn.prepare("SELECT COUNT(*) AS n FROM config").get().n;
   if (count > 0) return;
@@ -108,6 +115,7 @@ function initDefaults(conn) {
   const rows = [
     ["prompt_full_days", "7"],
     ["output_days", "3"],
+    ["output_full_days", "3"],
     ["row_days", "365"],
     ["max_prompt_chars", "4000"],
     ["max_db_mb", "100"],
@@ -133,13 +141,13 @@ function setupStatements(conn) {
         invocation_id, batch_id, session_id, parent_task_id, task_index, tool_type,
         project, cwd, prompt_slug, prompt_hash, prompt, url, sandbox, approval, model,
         skip_git_check, started_at, ended_at, duration_ms, exit_code, status, failure_reason,
-        timed_out, output_capped, stdout_bytes, stderr_bytes, output_truncated, error_text,
+        timed_out, output_capped, stdout_bytes, stderr_bytes, output_truncated, output_full, error_text,
         redaction_count, token_est, cost_est_usd
       ) VALUES (
         @invocation_id, @batch_id, @session_id, @parent_task_id, @task_index, @tool_type,
         @project, @cwd, @prompt_slug, @prompt_hash, @prompt, @url, @sandbox, @approval, @model,
         @skip_git_check, @started_at, @ended_at, @duration_ms, @exit_code, @status, @failure_reason,
-        @timed_out, @output_capped, @stdout_bytes, @stderr_bytes, @output_truncated, @error_text,
+        @timed_out, @output_capped, @stdout_bytes, @stderr_bytes, @output_truncated, @output_full, @error_text,
         @redaction_count, @token_est, @cost_est_usd
       )
     `),
@@ -171,6 +179,7 @@ function setupStatements(conn) {
         stdout_bytes = COALESCE(@stdout_bytes, stdout_bytes),
         stderr_bytes = COALESCE(@stderr_bytes, stderr_bytes),
         output_truncated = COALESCE(@output_truncated, output_truncated),
+        output_full = COALESCE(@output_full, output_full),
         error_text = COALESCE(@error_text, error_text),
         redaction_count = COALESCE(@redaction_count, redaction_count),
         token_est = COALESCE(@token_est, token_est),
@@ -207,11 +216,13 @@ export function runRetentionCleanup() {
 
     const promptFullDays = parseRetentionInt(getConfig("prompt_full_days", "7"), 7);
     const outputDays = parseRetentionInt(getConfig("output_days", "3"), 3);
+    const outputFullDays = parseRetentionInt(getConfig("output_full_days", "3"), 3);
     const rowDays = parseRetentionInt(getConfig("row_days", "365"), 365);
     const maxDbMb = parseRetentionInt(getConfig("max_db_mb", "100"), 100);
 
     const promptCutoff = now - promptFullDays * 86400 * 1000;
     const outputCutoff = now - outputDays * 86400 * 1000;
+    const outputFullCutoff = now - outputFullDays * 86400 * 1000;
     const rowCutoff = now - rowDays * 86400 * 1000;
 
     const nullPromptStmt = db.prepare(`
@@ -223,6 +234,11 @@ export function runRetentionCleanup() {
       UPDATE tasks
       SET output_truncated = NULL
       WHERE started_at < ? AND output_truncated IS NOT NULL
+    `);
+    const nullFullOutputStmt = db.prepare(`
+      UPDATE tasks
+      SET output_full = NULL
+      WHERE started_at < ? AND output_full IS NOT NULL
     `);
     const deleteOldTasksStmt = db.prepare(`
       DELETE FROM tasks
@@ -254,6 +270,7 @@ export function runRetentionCleanup() {
 
     const nulledPrompts = nullPromptStmt.run(promptCutoff).changes;
     const nulledOutputs = nullOutputStmt.run(outputCutoff).changes;
+    const nulledFullOutputs = nullFullOutputStmt.run(outputFullCutoff).changes;
     let deletedTasks = deleteOldTasksStmt.run(rowCutoff).changes;
     deleteOldBatchesStmt.run(rowCutoff);
     deleteOldSessionsStmt.run(rowCutoff);
@@ -274,7 +291,7 @@ export function runRetentionCleanup() {
     }
 
     console.error(
-      `[audit-db] retention: nulled ${nulledPrompts} prompts, ${nulledOutputs} outputs, deleted ${deletedTasks} tasks`
+      `[audit-db] retention: nulled ${nulledPrompts} prompts, ${nulledOutputs} outputs, ${nulledFullOutputs} full outputs, deleted ${deletedTasks} tasks`
     );
   } catch (error) {
     console.error(`[audit-db] retention cleanup failed: ${error.message}`);
@@ -293,6 +310,7 @@ try {
   ensurePrivatePath(`${DB_PATH}-shm`, 0o600);
 
   initSchema(db);
+  migrateSchema(db);
   initDefaults(db);
   statements = setupStatements(db);
   runRetentionCleanup();
@@ -360,6 +378,7 @@ export function insertTask(fields) {
   if (!dbReady()) return null;
   const promptRedaction = redact(fields.prompt);
   const outputRedaction = redact(fields.output_truncated);
+  const outputFullRedaction = redact(fields.output_full);
   const errorRedaction = redact(fields.error_text);
   const providedRedactionCount = Number(fields.redaction_count ?? 0);
   const safeProvidedRedactionCount = Number.isFinite(providedRedactionCount)
@@ -369,6 +388,7 @@ export function insertTask(fields) {
     safeProvidedRedactionCount +
     promptRedaction.count +
     outputRedaction.count +
+    outputFullRedaction.count +
     errorRedaction.count;
 
   const result = statements.insertTask.run({
@@ -399,6 +419,7 @@ export function insertTask(fields) {
     stdout_bytes: fields.stdout_bytes ?? null,
     stderr_bytes: fields.stderr_bytes ?? null,
     output_truncated: outputRedaction.text ?? null,
+    output_full: outputFullRedaction.text ?? null,
     error_text: errorRedaction.text ?? null,
     redaction_count: totalRedactionCount,
     token_est: fields.token_est ?? null,
@@ -411,9 +432,13 @@ export function updateTask(invocationId, fields) {
   if (!dbReady()) return;
   const promptRedaction = redact(fields.prompt);
   const outputRedaction = redact(fields.output_truncated);
+  const outputFullRedaction = redact(fields.output_full);
   const errorRedaction = redact(fields.error_text);
   const incrementalRedactionCount =
-    promptRedaction.count + outputRedaction.count + errorRedaction.count;
+    promptRedaction.count +
+    outputRedaction.count +
+    outputFullRedaction.count +
+    errorRedaction.count;
 
   let mergedRedactionCount = fields.redaction_count;
   if (incrementalRedactionCount > 0) {
@@ -452,6 +477,7 @@ export function updateTask(invocationId, fields) {
     stdout_bytes: fields.stdout_bytes,
     stderr_bytes: fields.stderr_bytes,
     output_truncated: outputRedaction.text,
+    output_full: outputFullRedaction.text,
     error_text: errorRedaction.text,
     redaction_count: mergedRedactionCount,
     token_est: fields.token_est,
@@ -495,6 +521,8 @@ export function autoTag(taskId, promptSlug, sandbox) {
 
 export function shouldStoreFullPrompt(project) {
   if (process.env.AUDIT_LOG_PROMPTS === "1") return true;
+  if (getConfig("full_prompt_storage", "false") === "true") return true;
+  if (getConfig(`full_prompt_project:${project}`, "false") === "true") return true;
   if (getConfig(`prompt_storage_project:${project}`, "slug-only") === "full") return true;
   if (getConfig("prompt_storage", "slug-only") === "full") return true;
   return false;
@@ -502,6 +530,8 @@ export function shouldStoreFullPrompt(project) {
 
 export function shouldStoreFullOutput(project) {
   if (process.env.AUDIT_LOG_OUTPUT === "1") return true;
+  if (getConfig("full_output_storage", "false") === "true") return true;
+  if (getConfig(`full_output_project:${project}`, "false") === "true") return true;
   if (getConfig(`output_storage_project:${project}`, "slug-only") === "full") return true;
   if (getConfig("output_storage", "slug-only") === "full") return true;
   return false;
@@ -512,7 +542,7 @@ export function writeBatchStatus(batchId, tasks) {
     fs.mkdirSync(TMP_DIR, { recursive: true, mode: 0o700 });
     ensurePrivatePath(TMP_DIR, 0o700);
     const finalPath = path.join(TMP_DIR, `${batchId}.json`);
-    const tempPath = `${finalPath}.tmp`;
+    const tempPath = `${finalPath}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
     const payload = {
       batchId,
       updatedAt: Date.now(),
@@ -529,7 +559,10 @@ export function writeBatchStatus(batchId, tasks) {
     fs.writeFileSync(tempPath, JSON.stringify(payload), { mode: 0o600 });
     fs.renameSync(tempPath, finalPath);
     ensurePrivatePath(finalPath, 0o600);
-  } catch {}
+  } catch (error) {
+    console.error("Failed to write batch status", { batchId, error });
+    throw error;
+  }
 }
 
 export function cleanBatchStatus(batchId) {
