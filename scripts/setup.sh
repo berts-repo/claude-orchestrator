@@ -67,6 +67,16 @@ fi
 echo
 echo "==> Ensuring MCP registrations"
 if command -v claude >/dev/null 2>&1; then
+  # Resolve allowed cwd roots: .env override or parent of this repo
+  ALLOWED_ROOTS=""
+  if [[ -f "$REPO/.env" ]]; then
+    ALLOWED_ROOTS="$(grep -E '^CODEX_POOL_ALLOWED_CWD_ROOTS=' "$REPO/.env" | cut -d'=' -f2- | tr -d '[:space:]')"
+  fi
+  if [[ -z "$ALLOWED_ROOTS" ]]; then
+    ALLOWED_ROOTS="$(dirname "$REPO")"
+  fi
+  echo "Codex allowed roots: $ALLOWED_ROOTS"
+
   mcp_list="$(claude mcp list 2>/dev/null || true)"
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate-web([^[:alnum:]-]|$)'; then
@@ -77,8 +87,11 @@ if command -v claude >/dev/null 2>&1; then
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate([^[:alnum:]-]|$)'; then
     echo "delegate already registered, skipping."
+    echo "NOTE: To update allowed roots, run: /audit add-root <path>  (then restart Claude Code)"
   else
-    claude mcp add -s user delegate -- "$REPO/codex-delegation-mcp/server.js"
+    claude mcp add -s user delegate \
+      --env "CODEX_POOL_ALLOWED_CWD_ROOTS=$ALLOWED_ROOTS" \
+      -- "$REPO/codex-delegation-mcp/server.js"
   fi
 else
   echo "WARNING: 'claude' is not installed or not in PATH; skipping MCP registration/validation."
