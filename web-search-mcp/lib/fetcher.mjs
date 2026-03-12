@@ -249,7 +249,7 @@ async function assertSafeUrl(urlObj) {
   }
 }
 
-export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_880 } = {}) {
+export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_880, requestImpl = sendRequest } = {}) {
   let urlObj;
   try {
     urlObj = new URL(rawUrl);
@@ -276,7 +276,7 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     let redirectCount = 0;
     while (true) {
       const { pinnedUrlObj, hostHeader, pinnedLookup } = await resolveSafeFetchAddress(currentUrlObj);
-      response = await sendRequest(pinnedUrlObj, {
+      response = await requestImpl(pinnedUrlObj, {
         signal: controller.signal,
         pinnedLookup,
         headers: {

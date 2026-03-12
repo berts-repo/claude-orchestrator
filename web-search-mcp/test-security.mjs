@@ -64,19 +64,20 @@ test("fetchUrl blocks redirect chain when redirected to private IP", async () =>
 });
 
 test("fetchUrl rejects too many redirects with ERR_TOO_MANY_REDIRECTS", async () => {
-  const originalFetch = globalThis.fetch;
   let hop = 0;
-  globalThis.fetch = async () => {
+  const requestImpl = async () => {
     hop += 1;
-    // Use a literal public IP so assertSafeUrl skips DNS (isIP early-return)
-    return redirectResponse(`https://1.2.3.4/hop-${hop}`);
+    return {
+      statusCode: 302,
+      headers: { location: `https://1.2.3.4/hop-${hop}` },
+      destroy() {},
+    };
   };
 
-  try {
-    await assertRejectsCode(() => fetchUrl("https://1.2.3.4/start"), "ERR_TOO_MANY_REDIRECTS");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  await assertRejectsCode(
+    () => fetchUrl("https://1.2.3.4/start", { requestImpl }),
+    "ERR_TOO_MANY_REDIRECTS",
+  );
 });
 
 test("sanitizeResponse strips ANSI color code", () => {
