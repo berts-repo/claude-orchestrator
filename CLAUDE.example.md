@@ -29,13 +29,6 @@ bash scripts/sync-hooks.sh --check
 # Test web-search-mcp
 cd web-search-mcp && node test-security.mjs
 
-# View delegation logs (terminal)
-bash scripts/log-view.sh              # last 5 entries, full detail
-bash scripts/log-view.sh --list       # summary table only
-bash scripts/log-view.sh --codex 10   # last 10 Codex entries
-bash scripts/log-view.sh --web         # web/Gemini entries only
-bash scripts/log-view.sh auth         # keyword filter
-
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
 # Available: /audit, /clauded, /monitor, /summarize, /session
@@ -68,9 +61,11 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 ### codex-delegation-mcp
 
 - `server.js` — MCP server exposing `codex` (single task) and `codex_parallel` (up to 10 simultaneous tasks via `Promise.all`)
+- `config.json` — allowed/blocked cwd paths (edit this to add or remove roots); missing file warns and falls back to defaults
 - Spawns `codex exec --ephemeral -s <sandbox>` subprocesses; sandbox modes: `read-only`, `workspace-write`, `danger-full-access`
 - Timeout: 5 min default (`CODEX_POOL_TIMEOUT_MS`); output capped at 2 MB
 - API key: reads `OPENAI_API_KEY` env or `~/.codex/auth.json`
+- `CODEX_POOL_ALLOWED_CWD_ROOTS` env var extends (adds to) `config.json` allowed roots
 
 ### Hooks system
 

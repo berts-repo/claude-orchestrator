@@ -1,8 +1,7 @@
 Capture or restore a session snapshot for this project.
 
 Parse $ARGUMENTS for:
-- Flags: --resume, --append, --log, --clear, --note
-- LOG_N: number immediately after --log (default 5 if --log present but no number given)
+- Flags: --resume, --append, --clear, --note
 - NOTE_TEXT: quoted string after --note
 
 ## --clear
@@ -24,11 +23,11 @@ Done.
 If .SESSION.md exists: read it and display its contents under "## Session Context". Done.
 If .SESSION.md does not exist: display "No session snapshot found. Run /session to create one." Done.
 
-## Default / --append / --log [N]
+## Default / --append
 
 Delegate to Codex with:
 - sandbox: read-only
-- approval_policy: never
+- approval-policy: never
 - cwd: current working directory
 
 Use this Codex prompt:
@@ -74,10 +73,21 @@ Keep output under 60 lines total.
 
 After Codex returns:
 - Display the snapshot under "## Session Snapshot"
-- If --log is set, Claude (not Codex) reads `~/.claude/logs/delegations.jsonl` directly,
-  extracts the last N entries (N = LOG_N, default 5), and appends:
-  `## Recent Audit`
-  [one bullet per entry: [sandbox] — [short task description, ≤10 words]]
+- Claude (not Codex) queries `~/.claude/audit.db` directly with:
+  ```sql
+  SELECT prompt_slug, tool_type, sandbox, status, failure_reason,
+         duration_ms, token_est, started_at
+  FROM tasks
+  WHERE project = '<basename of cwd>'
+  ORDER BY started_at DESC
+  LIMIT 10
+  ```
+- Append this section to the snapshot:
+  `## Recent Delegation Activity`
+  [markdown table with columns: timestamp | type | sandbox | status | duration | prompt_slug]
+  [status column uses ✓ for success and ✗ for failed]
+  [if any displayed rows have non-null failure_reason, list each inline below the table]
+  [footer line: total token_est for displayed tasks]
 - If --append AND .SESSION.md exists:
     new content = [Codex output] + "\n\n---\n\n" + [existing .SESSION.md contents]
     Write new content to .SESSION.md

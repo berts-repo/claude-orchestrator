@@ -14,30 +14,18 @@ async function assertRejectsCode(promiseFactory, code) {
   );
 }
 
-function redirectResponse(location) {
-  return {
-    status: 302,
-    headers: {
-      get(name) {
-        return name.toLowerCase() === "location" ? location : null;
-      },
-    },
-  };
-}
-
-function plainResponse({ url = "https://example.com/final", contentType = "text/plain", body = "ok" } = {}) {
-  return new Response(body, {
-    status: 200,
-    headers: { "content-type": contentType },
-  });
-}
-
 test("fetchUrl rejects blocked URL patterns with ERR_URL_NOT_ALLOWED", async () => {
   const urls = [
     "http://localhost./",
+    "http://foo.localhost/",
+    "http://localhost.localdomain/",
+    "http://ip6-localhost/",
     "http://[::ffff:127.0.0.1]/",
     "http://[::ffff:10.0.0.1]/",
+    "http://[::]/",
     "http://[::1]/",
+    "http://[fec0::1]/",
+    "http://[ff02::1]/",
     "http://10.0.0.1/",
     "http://192.168.1.1/",
     "http://172.16.0.1/",
@@ -53,30 +41,46 @@ test("fetchUrl rejects blocked URL patterns with ERR_URL_NOT_ALLOWED", async () 
 });
 
 test("fetchUrl blocks redirect chain when redirected to private IP", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => redirectResponse("http://127.0.0.1/secret");
+  const requestImpl = async () => ({
+    statusCode: 302,
+    headers: { location: "http://127.0.0.1/secret" },
+    destroy() {},
+  });
 
-  try {
-    await assertRejectsCode(() => fetchUrl("http://example.com/start"), "ERR_URL_NOT_ALLOWED");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  await assertRejectsCode(
+    () => fetchUrl("https://1.2.3.4/start", { requestImpl }),
+    "ERR_URL_NOT_ALLOWED",
+  );
+});
+
+test("fetchUrl blocks redirect chain when redirected to local hostname", async () => {
+  const requestImpl = async () => ({
+    statusCode: 302,
+    headers: { location: "https://foo.localhost/secret" },
+    destroy() {},
+  });
+
+  await assertRejectsCode(
+    () => fetchUrl("https://1.2.3.4/start", { requestImpl }),
+    "ERR_URL_NOT_ALLOWED",
+  );
 });
 
 test("fetchUrl rejects too many redirects with ERR_TOO_MANY_REDIRECTS", async () => {
-  const originalFetch = globalThis.fetch;
   let hop = 0;
-  globalThis.fetch = async () => {
+  const requestImpl = async () => {
     hop += 1;
-    // Use a literal public IP so assertSafeUrl skips DNS (isIP early-return)
-    return redirectResponse(`https://1.2.3.4/hop-${hop}`);
+    return {
+      statusCode: 302,
+      headers: { location: `https://1.2.3.4/hop-${hop}` },
+      destroy() {},
+    };
   };
 
-  try {
-    await assertRejectsCode(() => fetchUrl("https://1.2.3.4/start"), "ERR_TOO_MANY_REDIRECTS");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  await assertRejectsCode(
+    () => fetchUrl("https://1.2.3.4/start", { requestImpl }),
+    "ERR_TOO_MANY_REDIRECTS",
+  );
 });
 
 test("sanitizeResponse strips ANSI color code", () => {

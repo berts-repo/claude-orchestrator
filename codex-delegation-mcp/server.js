@@ -26,6 +26,7 @@ import { createHash, randomUUID } from "crypto";
 import { readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import { z } from "zod";
 import {
   autoTag,
@@ -49,17 +50,63 @@ const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs >
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const USER_HOME = toCanonicalPath(path.resolve(process.env.HOME ?? homedir()));
-const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"];
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = path.resolve(MODULE_DIR, "config.json");
+const DEFAULT_CONFIG = {
+  allowedRoots: [USER_HOME],
+  blockedPaths: ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"],
+};
 const BLOCKED_HOME_DIR_NAMES = new Set([".ssh", ".gnupg", ".aws", ".config", ".local", ".cache", ".claude"]);
 const ALLOW_DANGER_SANDBOX = process.env.CODEX_ALLOW_DANGER_SANDBOX === "1";
+
+function expandHomePath(targetPath) {
+  if (targetPath === "~") return USER_HOME;
+  if (targetPath.startsWith("~/")) return path.resolve(USER_HOME, targetPath.slice(2));
+  return targetPath;
+}
+
+function loadConfig() {
+  let rawConfig;
+  try {
+    rawConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+      console.warn(
+        `[codex-delegation] Missing config file at '${CONFIG_PATH}'. Falling back to default cwd policy.`
+      );
+      return DEFAULT_CONFIG;
+    }
+    throw err;
+  }
+
+  const allowedRoots = Array.isArray(rawConfig.allowedRoots)
+    ? rawConfig.allowedRoots
+    : DEFAULT_CONFIG.allowedRoots;
+  const blockedPaths = Array.isArray(rawConfig.blockedPaths)
+    ? rawConfig.blockedPaths
+    : DEFAULT_CONFIG.blockedPaths;
+
+  return {
+    allowedRoots: allowedRoots
+      .filter((targetPath) => typeof targetPath === "string" && targetPath.trim())
+      .map((targetPath) => path.resolve(expandHomePath(targetPath.trim()))),
+    blockedPaths: blockedPaths
+      .filter((targetPath) => typeof targetPath === "string" && targetPath.trim())
+      .map((targetPath) => path.resolve(expandHomePath(targetPath.trim()))),
+  };
+}
+
+const config = loadConfig();
 const SESSION_ID = randomUUID();
 let sessionInitialized = false;
 
 function parseAllowedCwdRoots() {
   const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
-  const roots = (configured ? configured.split(",") : [])
+  const defaultRoots = config.allowedRoots;
+  const roots = [...defaultRoots, ...(configured ? configured.split(",") : [])]
     .map((root) => root.trim())
     .filter(Boolean)
+    .map((root) => expandHomePath(root))
     .filter((root) => path.isAbsolute(root))
     .map((root) => toCanonicalPath(path.resolve(root)));
   return Array.from(new Set(roots));
@@ -100,6 +147,10 @@ function toFailureReason(result) {
 function toStoredOutput(result) {
   const merged = [result.stdoutText ?? "", result.stderrText ?? ""].filter(Boolean).join("\n");
   return merged.slice(0, 2048);
+}
+
+function toStoredOutputFull(result) {
+  return [result.stdoutText ?? "", result.stderrText ?? ""].filter(Boolean).join("\n");
 }
 
 function toStoredError(result) {
@@ -178,7 +229,14 @@ const TaskSchema = z.object({
 });
 
 const ParallelSchema = z.object({
-  tasks: z.preprocess(val => typeof val === 'string' ? JSON.parse(val) : val, z.array(TaskSchema).min(1).max(10)).describe("Tasks to run in parallel (max 10)"),
+  tasks: z.preprocess((val) => {
+    if (typeof val !== "string") return val;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }, z.array(TaskSchema).min(1).max(10)).describe("Tasks to run in parallel (max 10)"),
 });
 
 // ── Subprocess runner ──────────────────────────────────────────────────────
@@ -349,16 +407,14 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
 }
 
 function isWithinRoot(targetPath, rootPath) {
-  const rel = path.relative(rootPath, targetPath);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedRoot = path.resolve(rootPath);
+  const rootPrefix = normalizedRoot.endsWith(path.sep)
+    ? normalizedRoot
+    : `${normalizedRoot}${path.sep}`;
+  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(rootPrefix);
 }
 
-function getHomeDepth(targetPath) {
-  if (!USER_HOME || !isWithinRoot(targetPath, USER_HOME)) return null;
-  const rel = path.relative(USER_HOME, targetPath);
-  if (!rel) return 0;
-  return rel.split(path.sep).filter(Boolean).length;
-}
 
 function toCanonicalPath(resolvedPath) {
   try {
@@ -382,6 +438,7 @@ function getBlockedHomePath(normalizedCwd) {
   return null;
 }
 
+
 function normalizeTask(task, taskLabel = "task") {
   if (!path.isAbsolute(task.cwd)) {
     throw new Error(
@@ -396,12 +453,10 @@ function normalizeTask(task, taskLabel = "task") {
       `${taskLabel}: invalid cwd '${normalizedCwd}'. Sensitive home directory '${blockedHomePath}' is not allowed.`
     );
   }
-  const blockedRoot = BLOCKED_CWD_ROOTS.find(
-    (blocked) => normalizedCwd === blocked || normalizedCwd.startsWith(`${blocked}/`)
-  );
+  const blockedRoot = config.blockedPaths.find((blocked) => isWithinRoot(normalizedCwd, blocked));
   if (blockedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. Root/system directory '${blockedRoot}' is not allowed.`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (codex-delegation-mcp/config.json).`
     );
   }
 
@@ -418,12 +473,6 @@ function normalizeTask(task, taskLabel = "task") {
     );
   }
 
-  const homeDepth = getHomeDepth(normalizedCwd);
-  if (task.sandbox === "workspace-write" && homeDepth !== null && homeDepth < 0) {
-    throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. For workspace-write safety, cwd under '${USER_HOME}' must be at or below home.`
-    );
-  }
 
   let approvalPolicy = task["approval-policy"];
   if (task.sandbox === "danger-full-access" && !ALLOW_DANGER_SANDBOX) {
@@ -644,9 +693,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       promptValue = redacted.text;
       redactionCount += redacted.count;
     }
-    if (failed || shouldStoreFullOutput(project)) {
+    {
       const redacted = redact(toStoredOutput(result));
       outputValue = redacted.text;
+      redactionCount += redacted.count;
+    }
+    let outputFullValue = null;
+    if (shouldStoreFullOutput(project)) {
+      const redacted = redact(toStoredOutputFull(result));
+      outputFullValue = redacted.text;
       redactionCount += redacted.count;
     }
     if (failed) {
@@ -668,6 +723,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         stderr_bytes: result.stderrBytes,
         prompt: promptValue,
         output_truncated: outputValue,
+        output_full: outputFullValue,
         error_text: errorText,
         redaction_count: redactionCount,
       });
@@ -794,9 +850,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             promptValue = redacted.text;
             redactionCount += redacted.count;
           }
-          if (failed || shouldStoreFullOutput(project)) {
+          {
             const redacted = redact(toStoredOutput(result));
             outputValue = redacted.text;
+            redactionCount += redacted.count;
+          }
+          let outputFullValue = null;
+          if (shouldStoreFullOutput(project)) {
+            const redacted = redact(toStoredOutputFull(result));
+            outputFullValue = redacted.text;
             redactionCount += redacted.count;
           }
           if (failed) {
@@ -824,6 +886,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               stderr_bytes: result.stderrBytes,
               prompt: promptValue,
               output_truncated: outputValue,
+              output_full: outputFullValue,
               error_text: errorText,
               redaction_count: redactionCount,
             });

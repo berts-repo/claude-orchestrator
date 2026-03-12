@@ -8,7 +8,7 @@ Parse $ARGUMENTS:
 
 By default, do NOT use any MCP tools:
 - `mcp__delegate__codex` / `mcp__delegate__codex_parallel` — blocked unless `--allow codex` or `--allow all`
-- `mcp__delegate-web__search` / `mcp__delegate-web__fetch` — blocked unless `--allow web` or `--allow all`
+- `mcp__delegate_web__search` / `mcp__delegate_web__fetch` — blocked unless `--allow web` or `--allow all`
 
 Use only Claude's built-in tools: Read, Grep, Glob, Bash, Edit, Write.
 

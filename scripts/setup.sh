@@ -70,7 +70,7 @@ if command -v claude >/dev/null 2>&1; then
   # Resolve allowed cwd roots: .env override or parent of this repo
   ALLOWED_ROOTS=""
   if [[ -f "$REPO/.env" ]]; then
-    ALLOWED_ROOTS="$(grep -E '^CODEX_POOL_ALLOWED_CWD_ROOTS=' "$REPO/.env" | cut -d'=' -f2- | tr -d '[:space:]')"
+    ALLOWED_ROOTS="$(grep -E '^CODEX_POOL_ALLOWED_CWD_ROOTS=' "$REPO/.env" | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   fi
   if [[ -z "$ALLOWED_ROOTS" ]]; then
     ALLOWED_ROOTS="$(dirname "$REPO")"

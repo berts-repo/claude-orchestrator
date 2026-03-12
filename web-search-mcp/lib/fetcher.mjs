@@ -30,15 +30,37 @@ const IPV4_DENY_CIDRS = [
 ];
 
 const IPV6_DENY_CIDRS = [
+  "::/128",
   "::1/128",
   "fc00::/7",
+  "fec0::/10",
   "fe80::/10",
+  "ff00::/8",
   "::ffff:0:0/96",
   "64:ff9b::/96",
   "100::/64",
   "2001::/23",
   "2001:db8::/32",
 ];
+
+const BLOCKED_HOSTNAMES = new Set([
+  "localhost",
+  "localhost.localdomain",
+  "localhost6",
+  "localhost6.localdomain6",
+  "ip6-localhost",
+  "ip6-loopback",
+  "metadata.google.internal",
+]);
+
+function isBlockedHostname(hostname) {
+  return (
+    BLOCKED_HOSTNAMES.has(hostname) ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  );
+}
 
 function normalizeIpLiteral(ip) {
   return ip.toLowerCase().replace(/^\[|\]$/g, "");
@@ -209,10 +231,7 @@ async function assertSafeUrl(urlObj) {
   const hostname = urlObj.hostname.toLowerCase().replace(/\.+$/, "");
   const ipv6Hostname = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
 
-  if (hostname === "localhost") {
-    throw errorWithCode("URL not allowed: localhost is blocked", "ERR_URL_NOT_ALLOWED");
-  }
-  if (hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+  if (isBlockedHostname(hostname)) {
     throw errorWithCode("URL not allowed: local/internal domains are blocked", "ERR_URL_NOT_ALLOWED");
   }
   if (hostname === "169.254.169.254") {
@@ -249,7 +268,7 @@ async function assertSafeUrl(urlObj) {
   }
 }
 
-export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_880 } = {}) {
+export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_880, requestImpl = sendRequest } = {}) {
   let urlObj;
   try {
     urlObj = new URL(rawUrl);
@@ -276,7 +295,7 @@ export async function fetchUrl(rawUrl, { timeoutMs = 10_000, maxBytes = 5_242_88
     let redirectCount = 0;
     while (true) {
       const { pinnedUrlObj, hostHeader, pinnedLookup } = await resolveSafeFetchAddress(currentUrlObj);
-      response = await sendRequest(pinnedUrlObj, {
+      response = await requestImpl(pinnedUrlObj, {
         signal: controller.signal,
         pinnedLookup,
         headers: {

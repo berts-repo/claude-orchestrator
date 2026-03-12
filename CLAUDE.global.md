@@ -16,7 +16,7 @@ Each call spawns an independent `codex exec` process. `codex_parallel` fans out 
 - `mcp__delegate__codex_parallel` — array of tasks (`tasks: [...]`), all run in parallel
 - `codex-reply` is **removed** — processes are ephemeral; pass full context per call
 
-Always set `cwd` to an absolute path.
+Always set `cwd` to an absolute path. Allowed and blocked paths are configured in `codex-delegation-mcp/config.json` — edit that file to add/remove roots.
 
 | Task Type | Tool | Sandbox | Approval Policy |
 |-----------|------|---------|-----------------|
@@ -77,4 +77,4 @@ When a hook blocks a command with language suggesting approval is possible (e.g.
 1. **Do NOT silently adapt** — never work around a blocked command without user input
 2. **Do NOT retry** — if the user already approved and the hook still blocks, do not re-attempt the same command or try an alternative approach (e.g. Python shutil instead of rm -rf) to bypass it
 3. **Present for manual execution** — use AskUserQuestion with format: "Blocked command — run manually if needed:\n\n<commands>", with "Done" / "Skip" options, then continue with remaining work once the user responds
-4. **Command formatting** — never paste a long `&&`-chained command as one string. Split at each `&&` into separate numbered steps, each on its own line prefixed with the step number (e.g. `1. \`cmd\``), so line-wrap cannot corrupt the paste.
+4. **Command formatting** — present each command as plain text, one per line, with no code fences, no backticks, no bullet points, and no step numbers. Plain bare commands are easiest to copy and paste.

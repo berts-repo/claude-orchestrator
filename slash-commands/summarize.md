@@ -20,7 +20,7 @@ Produce a ~50-line structured summary and display under "## Project Context". Do
 
 Delegate to Codex with:
 - sandbox: read-only
-- approval_policy: never
+- approval-policy: never
 - cwd: current working directory
 
 ### Codex prompt by flag:
