@@ -29,13 +29,6 @@ bash scripts/sync-hooks.sh --check
 # Test web-search-mcp
 cd web-search-mcp && node test-security.mjs
 
-# View delegation logs (terminal)
-bash scripts/log-view.sh              # last 5 entries, full detail
-bash scripts/log-view.sh --list       # summary table only
-bash scripts/log-view.sh --codex 10   # last 10 Codex entries
-bash scripts/log-view.sh --web         # web/Gemini entries only
-bash scripts/log-view.sh auth         # keyword filter
-
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
 # Available: /audit, /clauded, /monitor, /summarize, /session

@@ -153,7 +153,7 @@ Primary audit storage is SQLite at `~/.claude/audit.db` (see `codex-delegation-m
 - Stores task/delegation records for Codex and web calls
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
-- Use `bash scripts/log-view.sh` to browse audit logs from the terminal; use `/audit` for direct SQLite queries/config updates
+- Use `/audit` for direct SQLite queries/config updates
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
 - Short identifying summary (first line of prompt, truncated to 80 chars)
@@ -176,18 +176,6 @@ Primary audit storage is SQLite at `~/.claude/audit.db` (see `codex-delegation-m
 - Severity mapping: destructive commands = high, network/sensitive reads = medium, blocked subagents = low
 - FIFO rotation keeps the last 200 entries
 - Run `/monitor` for a dashboard view of both delegation and security logs
-- Run `bash scripts/log-view.sh` to browse full prompt/response content from the terminal
-
-**Viewing logs** — `scripts/log-view.sh`:
-```bash
-bash scripts/log-view.sh              # last 5 entries, full prompt/response
-bash scripts/log-view.sh 20           # last 20 entries
-bash scripts/log-view.sh --list       # summary table only (no prompt/response)
-bash scripts/log-view.sh --codex      # Codex delegations only
-bash scripts/log-view.sh --gemini     # Gemini (web search/fetch) only
-bash scripts/log-view.sh auth         # keyword filter on summary/cwd
-bash scripts/log-view.sh 10 --codex   # combinable
-```
 ### Slash Commands
 
 Global slash commands are installed to `~/.claude/commands/`:
