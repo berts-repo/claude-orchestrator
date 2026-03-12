@@ -38,3 +38,24 @@ codex_log_correlation_key() {
   local prompt_text="$2"
   printf '%s-%s' "$tool_name" "$prompt_text" | shasum -a 256 | cut -c1-16
 }
+
+# codex_log_extract_request_nonce — best-effort stable nonce for one tool invocation
+# Uses payload IDs when available so start/post hooks can resolve the same marker.
+codex_log_extract_request_nonce() {
+  local payload="$1"
+  local nonce
+  nonce=$(echo "$payload" | jq -r '
+    .tool_call_id // .call_id // .invocation_id // .request_id // .id // ""
+  ' 2>/dev/null || echo "")
+  # Keep filename-safe chars only.
+  nonce=$(printf '%s' "$nonce" | tr -cd '[:alnum:]_.-')
+  printf '%s' "$nonce"
+}
+
+# codex_log_random_nonce — fallback nonce for invocation marker files
+codex_log_random_nonce() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 4 2>/dev/null && return
+  fi
+  printf '%04x%04x' "$RANDOM" "$RANDOM"
+}

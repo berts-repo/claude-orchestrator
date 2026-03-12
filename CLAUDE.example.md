@@ -38,7 +38,10 @@ bash scripts/log-view.sh auth         # keyword filter
 
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
-# Available: /log-cleanup, /monitor, /summarize, /session
+# Available: /audit, /clauded, /monitor, /summarize, /session
+# /audit runs a quick repository audit report
+# /clauded handles a task directly with Claude's built-in tools (bypasses MCP delegation)
+#   --allow codex  permit Codex MCP  |  --allow web  permit Web MCP  |  --allow all  permit both
 # /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
 ```
 
@@ -74,7 +77,7 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 Hook scripts live in `hooks/` and are wired via frontmatter headers:
 
 ```bash
-# HOOK_EVENT: PreToolUse       # required; one of: PreToolUse, PostToolUse, UserPromptSubmit
+# HOOK_EVENT: PreToolUse       # required; one of: PreToolUse, PostToolUse, UserPromptSubmit, Stop
 # HOOK_MATCHER: Bash           # optional; tool name or pipe-separated list
 # HOOK_TIMEOUT: 5              # optional; seconds, default 5
 # HOOK_HELPER: true            # mark as shared helper (not registered directly)

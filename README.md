@@ -49,7 +49,7 @@ For the web MCP: register the server as `delegate-web`, while hook/tool matchers
 | | |
 |---|---|
 | Purpose | Web search via Google Search grounding; URL fetching and extraction |
-| Auth | Gemini API key (env var, keyring, or `.env`) |
+| Auth | Gemini API key (env var, keyring, or `web-search-mcp/.env`) |
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
@@ -66,6 +66,8 @@ Internet access is triggered by explicit user intent:
 * "look on the internet"
 * "do some research"
 * "do a deep dive on"
+
+`gemini--preempt-recency-queries.sh` is an intentional exception to the explicit-intent rule: it is pre-authorized proactive search for time-sensitive prompts (for example: "latest", "as of today", "right now").
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
@@ -86,6 +88,25 @@ Tools exposed:
 * `codex_parallel` — fans out up to 10 tasks simultaneously via `Promise.all`, bypassing MCP call serialization
 
 Each call is ephemeral — full task context must be provided per call. Sandboxing is handled by the Codex CLI's `--sandbox` flag.
+
+### Allowed Working Directory Roots (`CODEX_POOL_ALLOWED_CWD_ROOTS`)
+
+The codex-delegation server validates every delegated task `cwd` against allowed root prefixes.
+
+- Env var: `CODEX_POOL_ALLOWED_CWD_ROOTS`
+- Format: comma-separated absolute paths (for example: `/home/me/git,/tmp`)
+- Default behavior: if unset, allowed roots default to `$HOME`
+- Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
+
+Common failure message:
+
+```text
+invalid cwd '...'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED_CWD_ROOTS (current: ...)
+```
+
+Remediation:
+- Set `CODEX_POOL_ALLOWED_CWD_ROOTS` to include your project root(s)
+- Ensure delegated task `cwd` uses an absolute path inside one of those roots
 
 ---
 
@@ -115,6 +136,7 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
 | `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Records start time for duration tracking |
 | `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
+| `web--log-audit.sh` | PostToolUse (`mcp__delegate_web__fetch\|mcp__delegate_web__search`) | Writes web search/fetch audit rows into `~/.claude/audit.db` (`tasks` table) |
 | `shared--codex-log-helpers.sh` | (helper) | Codex logging helpers; `codex_log_correlation_key` hashes the full prompt to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
@@ -123,6 +145,15 @@ To block an additional Task subagent type, add a line in `hooks/blocked-subagent
 ### Audit Logging
 
 All log entries share a unified schema with envelope fields: `timestamp`, `level` (info/warn/error), `component`, `session_id`, `event`, plus event-specific fields. The `session_id` groups all events from a single Claude Code process tree per day for correlation.
+
+#### Audit DB — `~/.claude/audit.db`
+
+Primary audit storage is SQLite at `~/.claude/audit.db` (see `codex-delegation-mcp/db.js`).
+
+- Stores task/delegation records for Codex and web calls
+- Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
+- Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
+- Use `bash scripts/log-view.sh` to browse audit logs from the terminal; use `/audit` for direct SQLite queries/config updates
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
 - Short identifying summary (first line of prompt, truncated to 80 chars)
@@ -157,20 +188,14 @@ bash scripts/log-view.sh --gemini     # Gemini (web search/fetch) only
 bash scripts/log-view.sh auth         # keyword filter on summary/cwd
 bash scripts/log-view.sh 10 --codex   # combinable
 ```
-**Cleanup** — run `/log-cleanup` to:
-- Remove orphaned detail files not referenced by the summary index
-- Remove expired detail files (30+ days)
-- Remove stale pending markers (1+ hours old) from interrupted delegations
-- Clean up stale summary entries
-- Report disk usage
-
 ### Slash Commands
 
 Global slash commands are installed to `~/.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
-| `/log-cleanup` | Clean up orphaned and expired delegation audit logs |
+| `/audit` | Query and browse the SQLite audit log (`~/.claude/audit.db`) |
+| `/clauded` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
 | `/monitor` | Dashboard showing delegation stats and security event analysis |
 | `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
 | `/session` | Capture or restore session snapshots in `.SESSION.md` |
@@ -235,6 +260,7 @@ All provider-specific logic remains inside the MCP servers.
 - **Claude Code CLI** (`claude`) — installed and authenticated
 - **Node.js v20+** — for the Gemini MCP server
 - **jq** — JSON parsing in hooks (`sudo pacman -S jq` / `brew install jq`)
+- **sqlite3** — required by `/audit`, `/monitor`, and DB-backed audit hooks
 - **Codex CLI** (optional) — for code delegations (`codex login` for auth)
 
 ---
@@ -261,7 +287,7 @@ cd ~/git/claude-orchestrator
 # 4. Configure API key
 cp web-search-mcp/.env.example web-search-mcp/.env
 chmod 600 web-search-mcp/.env
-# Edit .env and add your GEMINI_API_KEY
+# Edit web-search-mcp/.env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers
 chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js  # needs execute bit (shebang-based)

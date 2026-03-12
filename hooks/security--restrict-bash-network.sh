@@ -26,24 +26,16 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 # - This catches tricks like c"u"rl, w''get, $(curl foo), etc.
 command="$(normalize_command "$raw_command" aggressive)"
 
-# SEC-002 (Medium, Open): Incomplete network tool coverage.
-# The following tools make network connections but are not yet blocked:
-#   git (clone, fetch, push, pull), openssl s_client/s_server, pip/pip3 install,
-#   dig, nslookup, host, curl-alternatives (httpx CLI), mosh, nc variants.
-# Mitigation requires either explicit enumeration here or a deny-by-default
-# posture (allow-list approach). Architectural change — not a quick regex fix.
-
-# Match common network client commands and programming language HTTP calls
-# Require command-token context so ".ssh" path segments do not match "ssh".
-if printf '%s\n' "$command" | grep -Eiq '(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m)([[:space:];]|$)|/dev/tcp/|python[23]?\s.*\b(requests|urllib|http\.client|aiohttp|httpx)\b|node\s.*\b(fetch|http|https|axios|got|request)\b|ruby\s.*\b(net.http|open-uri|httparty|faraday)\b|php\s.*\b(curl_exec|file_get_contents\s*\(\s*["\x27]https?)\b'; then
-  matched=$(printf '%s' "$command" | grep -Eio '(curl|wget|nc|ncat|nmap|socat|ssh|scp|sftp|rsync|ftp|telnet|httpie|aria2c?|lynx|links|w3m|/dev/tcp/|requests|urllib|fetch|http\.client)' | head -1)
+# Deny-by-default for known network-capable commands and transport subcommands.
+if printf '%s\n' "$command" | grep -Eiq '(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?(curl|wget|fetch|httpie|http|aria2c|axel|dig|nslookup|host|ping|traceroute|nc|netcat|ncat|socat|ssh|scp|sftp|rsync|apt|apt-get|brew|snap)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?git([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(fetch|push|pull|clone|remote)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?pip([23](\.[0-9]+)*)?([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(install|download)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?npm([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(install|ci|update)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?yarn([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(add|install)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?pnpm([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+install([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?cargo([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+install([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?go([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(get|install)([[:space:];]|$)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?python([23](\.[0-9]+)*)?([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+-c[[:space:]].*(urllib|requests|http\.client)|(^|[;&|()[:space:]])([[:alnum:]_./-]*/)?node([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+-e[[:space:]].*(http|https|fetch)|/dev/tcp/'; then
+  matched=$(printf '%s' "$command" | grep -Eio '(curl|wget|fetch|httpie|http|aria2c|axel|git([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(fetch|push|pull|clone|remote)|pip([23](\.[0-9]+)*)?([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(install|download)|npm([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(install|ci|update)|yarn([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(add|install)|pnpm([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+install|cargo([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+install|go([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+(get|install)|apt-get|apt|brew|snap|dig|nslookup|host|ping|traceroute|nc|netcat|ncat|socat|ssh|scp|sftp|rsync|python([23](\.[0-9]+)*)?([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+-c[[:space:]].*(urllib|requests|http\.client)|node([[:space:]]+[^;&|()[:space:]]+)*[[:space:]]+-e[[:space:]].*(http|https|fetch)|/dev/tcp/)' | head -1)
   "$SCRIPT_DIR/security--log-security-event.sh" "restrict-bash-network" "Bash" "$matched" "$raw_command" "medium" &>/dev/null || true
   cat <<'EOF'
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "Direct network access via Bash is restricted. Use the search MCP tool for internet access."
+    "permissionDecisionReason": "Network access from Bash is restricted by policy. Use approved MCP tools for internet access."
   }
 }
 EOF

@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn, spawnSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
-import { readFileSync } from "fs";
+import { readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { z } from "zod";
@@ -48,21 +48,21 @@ const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const USER_HOME = path.resolve(process.env.HOME ?? homedir());
+const USER_HOME = toCanonicalPath(path.resolve(process.env.HOME ?? homedir()));
 const BLOCKED_CWD_ROOTS = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"];
+const BLOCKED_HOME_DIR_NAMES = new Set([".ssh", ".gnupg", ".aws", ".config", ".local", ".cache", ".claude"]);
+const ALLOW_DANGER_SANDBOX = process.env.CODEX_ALLOW_DANGER_SANDBOX === "1";
 const SESSION_ID = randomUUID();
 let sessionInitialized = false;
 
 function parseAllowedCwdRoots() {
   const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
-  const defaultRoots = USER_HOME ? [USER_HOME] : [];
-  const roots = (configured ? configured.split(",") : defaultRoots)
+  const roots = (configured ? configured.split(",") : [])
     .map((root) => root.trim())
     .filter(Boolean)
     .filter((root) => path.isAbsolute(root))
-    .map((root) => path.resolve(root));
-  const deduped = Array.from(new Set(roots));
-  return deduped.length > 0 ? deduped : defaultRoots;
+    .map((root) => toCanonicalPath(path.resolve(root)));
+  return Array.from(new Set(roots));
 }
 
 const ALLOWED_CWD_ROOTS = parseAllowedCwdRoots();
@@ -113,15 +113,52 @@ function isGitRepository(cwd) {
   return result.status === 0;
 }
 
-// Resolve API key: env var first, then ~/.codex/auth.json (where Codex stores it)
-function resolveApiKey() {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+function collectApiKeys(value, intoSet) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectApiKeys(item, intoSet);
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (typeof child === "string" && /api[_-]?key/i.test(key) && child.trim()) {
+        intoSet.add(child);
+      } else {
+        collectApiKeys(child, intoSet);
+      }
+    }
+  }
+}
+
+// Resolve OPENAI_API_KEY: env var first, then ~/.codex/auth.json.
+// Also gather API keys for output redaction.
+function resolveAuthConfig() {
+  let apiKey = process.env.OPENAI_API_KEY ?? null;
+  const redactValues = new Set();
+  if (process.env.OPENAI_API_KEY) redactValues.add(process.env.OPENAI_API_KEY);
   try {
     const auth = JSON.parse(readFileSync(`${homedir()}/.codex/auth.json`, "utf8"));
-    return auth.OPENAI_API_KEY ?? null;
+    if (!apiKey && typeof auth.OPENAI_API_KEY === "string" && auth.OPENAI_API_KEY.trim()) {
+      apiKey = auth.OPENAI_API_KEY;
+    }
+    collectApiKeys(auth, redactValues);
   } catch {
-    return null;
+    // Best effort only.
   }
+  if (apiKey) redactValues.add(apiKey);
+  return { apiKey, redactValues: Array.from(redactValues) };
+}
+
+function redactSensitiveOutput(text, redactValues = []) {
+  if (!text) return text;
+  let redacted = text;
+  for (const value of redactValues) {
+    if (typeof value === "string" && value.trim()) {
+      redacted = redacted.split(value).join("[REDACTED]");
+    }
+  }
+  redacted = redacted.replace(/\bsk-[A-Za-z0-9]{20,}\b/g, "[REDACTED]");
+  redacted = redacted.replace(/\bBearer [A-Za-z0-9\-._~+/]{20,}\b/g, "[REDACTED]");
+  return redacted;
 }
 
 // ── Schemas ────────────────────────────────────────────────────────────────
@@ -162,7 +199,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     } = task;
     const startedAt = Date.now();
 
-    const apiKey = resolveApiKey();
+    const { apiKey, redactValues } = resolveAuthConfig();
 
     const codexBin = process.env.CODEX_BIN ?? "codex";
     const shouldSkipGitRepoCheck = task["skip-git-repo-check"] || !isGitRepository(cwd);
@@ -260,15 +297,17 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
       clearTimeout(timeoutTimer);
       clearTimeout(forceKillTimer);
       const success = !timedOut && !outputCapped && code === 0;
+      const redactedStdout = redactSensitiveOutput(stdout, redactValues);
+      const redactedStderr = redactSensitiveOutput(stderr, redactValues);
       resolve({
         index,
         success,
-        output: stdout.trim(),
+        output: redactedStdout.trim(),
         error: timedOut
           ? `Timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`
           : outputCapped
             ? `Output exceeded ${MAX_OUTPUT_BYTES} bytes and process was terminated`
-          : stderr.trim() || undefined,
+          : redactedStderr.trim() || undefined,
         exitCode: code ?? -1,
         startedAt,
         finishedAt: Date.now(),
@@ -277,8 +316,8 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
         outputCapped,
         stdoutBytes,
         stderrBytes,
-        stdoutText: stdout,
-        stderrText: stderr,
+        stdoutText: redactedStdout,
+        stderrText: redactedStderr,
         spawnError: false,
       });
     });
@@ -286,11 +325,13 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     proc.on("error", (err) => {
       clearTimeout(timeoutTimer);
       clearTimeout(forceKillTimer);
+      const redactedStdout = redactSensitiveOutput(stdout, redactValues);
+      const redactedStderr = redactSensitiveOutput(stderr, redactValues);
       resolve({
         index,
         success: false,
         output: "",
-        error: `Failed to spawn codex: ${err.message}`,
+        error: redactSensitiveOutput(`Failed to spawn codex: ${err.message}`, redactValues),
         exitCode: -1,
         startedAt,
         finishedAt: Date.now(),
@@ -299,8 +340,8 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
         outputCapped: false,
         stdoutBytes,
         stderrBytes,
-        stdoutText: stdout,
-        stderrText: stderr,
+        stdoutText: redactedStdout,
+        stderrText: redactedStderr,
         spawnError: true,
       });
     });
@@ -319,6 +360,28 @@ function getHomeDepth(targetPath) {
   return rel.split(path.sep).filter(Boolean).length;
 }
 
+function toCanonicalPath(resolvedPath) {
+  try {
+    return realpathSync(resolvedPath);
+  } catch {
+    return resolvedPath;
+  }
+}
+
+function getBlockedHomePath(normalizedCwd) {
+  if (!USER_HOME || !isWithinRoot(normalizedCwd, USER_HOME)) return null;
+  const rel = path.relative(USER_HOME, normalizedCwd);
+  const [firstSegment] = rel.split(path.sep).filter(Boolean);
+  if (!firstSegment) return null;
+  if (BLOCKED_HOME_DIR_NAMES.has(firstSegment)) {
+    return path.join(USER_HOME, firstSegment);
+  }
+  if (firstSegment.startsWith(".")) {
+    return path.join(USER_HOME, firstSegment);
+  }
+  return null;
+}
+
 function normalizeTask(task, taskLabel = "task") {
   if (!path.isAbsolute(task.cwd)) {
     throw new Error(
@@ -326,13 +389,25 @@ function normalizeTask(task, taskLabel = "task") {
     );
   }
 
-  const normalizedCwd = path.resolve(task.cwd);
+  const normalizedCwd = toCanonicalPath(path.resolve(task.cwd));
+  const blockedHomePath = getBlockedHomePath(normalizedCwd);
+  if (blockedHomePath) {
+    throw new Error(
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. Sensitive home directory '${blockedHomePath}' is not allowed.`
+    );
+  }
   const blockedRoot = BLOCKED_CWD_ROOTS.find(
     (blocked) => normalizedCwd === blocked || normalizedCwd.startsWith(`${blocked}/`)
   );
   if (blockedRoot) {
     throw new Error(
       `${taskLabel}: invalid cwd '${normalizedCwd}'. Root/system directory '${blockedRoot}' is not allowed.`
+    );
+  }
+
+  if (ALLOWED_CWD_ROOTS.length === 0) {
+    throw new Error(
+      `${taskLabel}: no allowed cwd roots configured. Set CODEX_POOL_ALLOWED_CWD_ROOTS to explicit project/repo root path(s).`
     );
   }
 
@@ -351,6 +426,11 @@ function normalizeTask(task, taskLabel = "task") {
   }
 
   let approvalPolicy = task["approval-policy"];
+  if (task.sandbox === "danger-full-access" && !ALLOW_DANGER_SANDBOX) {
+    throw new Error(
+      "danger-full-access sandbox requires CODEX_ALLOW_DANGER_SANDBOX=1 server-side env var"
+    );
+  }
   if (task.sandbox === "danger-full-access" && approvalPolicy !== "untrusted") {
     console.warn(
       `[codex-delegation] ${taskLabel}: sandbox=danger-full-access requires approval-policy=untrusted; forcing untrusted.`
@@ -504,7 +584,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       endedAt: null,
       durationMs: null,
     }];
-    writeCurrentBatchId(batchId);
+    writeCurrentBatchId(batchId, invocationId);
 
     ensureSession(task.model);
     try {
@@ -603,7 +683,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } catch (error) {
       logDbError("single task finalize failed", error);
     } finally {
-      clearCurrentBatchId();
+      clearCurrentBatchId(invocationId);
     }
 
     return {
@@ -621,9 +701,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       return normalizeTask(taskWithApprovalPolicy, `codex_parallel task ${i + 1}`);
     });
+    const invocationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const batchId = randomUUID();
     const batchStart = Date.now();
-    writeCurrentBatchId(batchId);
+    writeCurrentBatchId(batchId, invocationId);
     const taskStates = normalizedTasks.map((task, index) => ({
       index,
       invocationId: randomUUID(),
@@ -763,7 +844,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } catch (error) {
       logDbError("parallel batch completion failed", error);
     } finally {
-      clearCurrentBatchId();
+      clearCurrentBatchId(invocationId);
     }
 
     const allSucceeded = results.every((r) => r.success);

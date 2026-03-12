@@ -60,6 +60,56 @@ is_sensitive_path() {
   is_protected_ssh_path "$path" || is_protected_env_path "$path"
 }
 
+resolve_canonical_path() {
+  local input_path="$1"
+
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -e -- "$input_path" 2>/dev/null && return 0
+  fi
+
+  if command -v readlink >/dev/null 2>&1; then
+    readlink -f -- "$input_path" 2>/dev/null && return 0
+  fi
+
+  return 1
+}
+
+PATH_CHECK_REASON=""
+PATH_CHECK_MATCH=""
+PATH_CHECK_MATCHED_TYPE=""
+
+path_hits_sensitive_target() {
+  local raw_path="$1"
+  local canonical=""
+
+  PATH_CHECK_REASON=""
+  PATH_CHECK_MATCH=""
+  PATH_CHECK_MATCHED_TYPE=""
+
+  if canonical="$(resolve_canonical_path "$raw_path")"; then
+    if [[ "$canonical" != "$raw_path" ]] && is_sensitive_path "$canonical"; then
+      PATH_CHECK_REASON="Symlink target resolves to protected path: $canonical"
+      PATH_CHECK_MATCH="$canonical"
+      PATH_CHECK_MATCHED_TYPE="symlink-target"
+      return 0
+    fi
+
+    if is_sensitive_path "$canonical"; then
+      PATH_CHECK_MATCH="$canonical"
+      return 0
+    fi
+
+    return 1
+  fi
+
+  if is_sensitive_path "$raw_path"; then
+    PATH_CHECK_MATCH="$raw_path"
+    return 0
+  fi
+
+  return 1
+}
+
 deny() {
   local reason="$1"
   local matched="$2"
@@ -98,7 +148,7 @@ command_has_sensitive_path() {
 
   for token in $command; do
     cleaned="$(clean_token "$token")"
-    if [[ -n "$cleaned" ]] && is_sensitive_path "$cleaned"; then
+    if [[ -n "$cleaned" ]] && path_hits_sensitive_target "$cleaned"; then
       return 0
     fi
   done
@@ -121,7 +171,7 @@ command_redirects_to_protected_env() {
     while IFS= read -r redirect_entry; do
       [[ -z "$redirect_entry" ]] && continue
       target="$(printf '%s' "$redirect_entry" | sed -E 's/^[0-9]*>>?[[:space:]]*//')"
-      if is_protected_env_path "$target"; then
+      if path_hits_sensitive_target "$target"; then
         return 0
       fi
     done <<<"$redirect_targets"
@@ -139,7 +189,7 @@ command_redirects_to_protected_env() {
       if [[ "$candidate" == "-"* ]]; then
         continue
       fi
-      if is_protected_env_path "$candidate"; then
+      if path_hits_sensitive_target "$candidate"; then
         return 0
       fi
     done
@@ -152,12 +202,18 @@ if [[ "$tool_name" == "Edit" || "$tool_name" == "Write" ]]; then
   raw_path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // ""' 2>/dev/null)" \
     || deny_on_parse_error
 
-  if is_protected_env_path "$raw_path"; then
+  if path_hits_sensitive_target "$raw_path"; then
+    if [[ -n "$PATH_CHECK_REASON" ]]; then
+      deny "$PATH_CHECK_REASON" "symlink-target-protected-path" "$raw_path"
+    fi
+  fi
+
+  if is_protected_env_path "${PATH_CHECK_MATCH:-$raw_path}"; then
     deny ".env files must be edited by the user directly. Run manually:\n\n  \$EDITOR $raw_path" \
       "protected-env-path" "$raw_path"
   fi
 
-  if is_protected_ssh_path "$raw_path"; then
+  if is_protected_ssh_path "${PATH_CHECK_MATCH:-$raw_path}"; then
     deny ".ssh paths must be edited by the user directly. Run manually:\n\n  \$EDITOR $raw_path" \
       "protected-ssh-path" "$raw_path"
   fi
@@ -170,11 +226,17 @@ raw_command="$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev
 command="$(normalize_command "$raw_command")"
 
 if command_has_delete_verb "$command" && command_has_sensitive_path "$command"; then
+  if [[ -n "$PATH_CHECK_REASON" ]]; then
+    deny "$PATH_CHECK_REASON" "symlink-target-protected-path" "$raw_command"
+  fi
   deny "Direct modification of .env or .ssh is not permitted. Run manually:\n\n  $raw_command" \
     "delete-on-sensitive-target" "$raw_command"
 fi
 
 if command_redirects_to_protected_env "$command"; then
+  if [[ -n "$PATH_CHECK_REASON" ]]; then
+    deny "$PATH_CHECK_REASON" "symlink-target-protected-path" "$raw_command"
+  fi
   deny "Direct modification of .env or .ssh is not permitted. Run manually:\n\n  $raw_command" \
     "redirect-to-protected-env" "$raw_command"
 fi

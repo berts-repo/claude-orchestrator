@@ -243,6 +243,35 @@ else
       echo -e "${C_DIM}──────${C_RESET}"
       echo "$response"
       echo ""
+
+    elif [[ "$type" == "web" ]]; then
+      detail_line=$(head -1 "$detail")
+      tool=$(echo "$detail_line" | jq -r '.tool // ""')
+      query=$(echo "$detail_line" | jq -r '.query // ""')
+      response=$(echo "$detail_line" | jq -r '.response // ""')
+
+      if [[ "$tool" == *"__fetch" ]]; then
+        tool_mode="fetch"
+      elif [[ "$tool" == *"__search" ]]; then
+        tool_mode="search"
+      else
+        tool_mode="web"
+      fi
+
+      response=$(trunc "$response" 1200)
+
+      echo -e "${C_LABEL}TOOL${C_RESET}"
+      echo -e "${C_DIM}────${C_RESET}"
+      echo "${tool_mode}"
+      echo ""
+      echo -e "${C_LABEL}QUERY${C_RESET}"
+      echo -e "${C_DIM}─────${C_RESET}"
+      echo "$query"
+      echo ""
+      echo -e "${C_LABEL}RESULT${C_RESET}"
+      echo -e "${C_DIM}──────${C_RESET}"
+      echo "$response"
+      echo ""
     fi
 
     idx=$((idx + 1))

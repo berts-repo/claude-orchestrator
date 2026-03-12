@@ -8,9 +8,11 @@ Delegate to Codex with:
 Use this Codex prompt:
 
 ---
-Read the following two log files:
-1. ~/.claude/logs/delegations.jsonl — delegation audit log (Codex and Gemini calls)
-2. ~/.claude/logs/security-events.jsonl — security event log (blocked actions)
+Claude will read the following two log files directly (do not ask Codex to read `~/.claude/*`):
+1. `~/.claude/logs/delegations.jsonl` — delegation audit log (Codex and Gemini calls)
+2. `~/.claude/logs/security-events.jsonl` — security event log (blocked actions)
+
+Use only the data Claude provides from those files.
 
 If either file is missing or empty, note that in the report and continue with whatever data is available.
 
@@ -58,7 +60,7 @@ Format the report with markdown tables where appropriate. Keep it concise — th
 After Codex returns, display the report verbatim.
 
 ### Audit Activity
-Query `~/.claude/audit.db` for recent activity:
+Claude (not Codex) should query `~/.claude/audit.db` for recent activity:
 - Last 10 tasks: `project`, `prompt_slug`, `status`, `duration_ms`, `started_at`
 - Any currently running tasks (`status = 'running'`)
 - Failure rate summary by project (last 7 days)
