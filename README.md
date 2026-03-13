@@ -208,7 +208,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 ```bash
 # Install (included in Quick Start)
 mkdir -p ~/.claude/commands
-cp skills/*.md ~/.claude/commands/
+cp commands/*.md ~/.claude/commands/
 ```
 
 Slash command cache files `.SESSION.md` and `.SUMMARY.md` are local/project state and are gitignored.
@@ -307,7 +307,7 @@ bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.cl
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
-cp skills/*.md ~/.claude/commands/
+cp commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
 claude mcp list                # delegate-web, delegate, and audit should show "Connected"
@@ -320,7 +320,7 @@ claude "search the web for MCP protocol specification"
 
 ## Setup Details
 
-- **Slash Commands:** Copy `skills/*.md` to `~/.claude/commands/` for global availability.
+- **Slash Commands:** Copy `commands/*.md` to `~/.claude/commands/` for global availability.
 
 ---
 

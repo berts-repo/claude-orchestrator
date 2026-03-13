@@ -53,7 +53,7 @@ Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security ru
 
 ## Adding Slash Commands
 
-Slash commands are `.md` files in `skills/`. To add a new command:
+Slash commands are `.md` files in `commands/`. To add a new command:
 1. Delegate authoring to Codex (`workspace-write`, scoped to the repo `cwd`)
 2. Claude runs `bash scripts/sync-commands.sh` to install symlinks into `~/.claude/commands/`
 
