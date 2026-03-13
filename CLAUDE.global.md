@@ -44,7 +44,12 @@ Avoid embedding hundreds of lines of existing file content in a prompt.
 
 ## Adding Hooks
 
-Hooks are registered via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). To add a new hook:
+Hooks are registered via frontmatter headers in non-helper `hooks/*.sh` files. Match existing naming (`<domain>--<action>.sh`).
+- Required: `# HOOK_EVENT:`
+- Optional: `# HOOK_TIMEOUT:` (defaults to `5` seconds when omitted), `# HOOK_MATCHER:`
+- Helper-only scripts must set `# HOOK_HELPER: true` and are not registered as hooks.
+
+To add a new hook:
 1. Delegate hook script creation to Codex (`workspace-write`, scoped to the repo `cwd`)
 2. Codex writes the `.sh` file with the correct frontmatter headers
 3. Claude runs `bash scripts/sync.sh` to apply (unified hooks + slash-command sync)

@@ -82,7 +82,7 @@ Returned data is retrieval-only: short summaries, source URLs, brief excerpts. R
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[audit/](audit/)** |
+| Location | **[audit-mcp/](audit-mcp/)** |
 
 Tools exposed:
 
@@ -106,7 +106,7 @@ The audit server is the DB owner. It initialises the schema, runs retention clea
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[delegate/](delegate/)** |
+| Location | **[codex-delegation-mcp/](codex-delegation-mcp/)** |
 
 Tools exposed:
 
@@ -174,7 +174,7 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 #### Audit DB — `~/.claude/audit.db`
 
-Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit/` and `delegate/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
+Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in `audit-mcp/db.js`. The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
 
 - Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing)
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
@@ -206,9 +206,10 @@ Global slash commands are installed to `~/.claude/commands/`:
 | `/session` | Capture or restore session snapshots in `.SESSION.md` |
 
 ```bash
-# Install (included in Quick Start)
-mkdir -p ~/.claude/commands
-cp commands/*.md ~/.claude/commands/
+# Install/update (included in Quick Start)
+bash scripts/sync.sh
+# Or commands-only:
+# bash scripts/sync-commands.sh
 ```
 
 Slash command cache files `.SESSION.md` and `.SUMMARY.md` are local/project state and are gitignored.
@@ -286,8 +287,8 @@ cp CLAUDE.global.md CLAUDE.md
 
 # 3. Install dependencies for all MCP servers
 cd web-delegation-mcp && npm install
-cd ../delegate && npm install  # better-sqlite3 requires native bindings (install scripts run)
-cd ../audit && npm install             # better-sqlite3 requires native bindings (install scripts run)
+cd ../codex-delegation-mcp && npm install  # better-sqlite3 requires native bindings (install scripts run)
+cd ../audit-mcp && npm install             # better-sqlite3 requires native bindings (install scripts run)
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
@@ -295,12 +296,12 @@ cp web-delegation-mcp/.env.example web-delegation-mcp/.env
 chmod 600 web-delegation-mcp/.env
 # Edit web-delegation-mcp/.env and add your GEMINI_API_KEY
 
-# 5. Register MCP servers (all three require execute bit — shebang-based entry points)
-chmod +x ~/git/claude-orchestrator/delegate/server.js
-chmod +x ~/git/claude-orchestrator/audit/server.js
+# 5. Register MCP servers (codex + audit entry points require execute bit)
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+chmod +x ~/git/claude-orchestrator/audit-mcp/server.js
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-delegation-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/delegate/server.js
-claude mcp add -s user audit -- ~/git/claude-orchestrator/audit/server.js
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+claude mcp add -s user audit -- ~/git/claude-orchestrator/audit-mcp/server.js
 
 # 6. Install hooks + slash commands (unified entry point)
 bash scripts/sync.sh
@@ -317,12 +318,14 @@ claude "search the web for MCP protocol specification"
 ## Setup Details
 
 - **Slash Commands:** Run `bash scripts/sync.sh` from repo root to keep `commands/*.md` linked into `~/.claude/commands/`.
+- **Verification mode:** Run `bash scripts/sync.sh --check` to validate hook/command discovery without applying changes.
 
 ---
 
 ## Hooks Wiring
 
 Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync.sh` to apply updates (it runs unified hooks + slash-command sync, including `~/.claude/hooks/` symlinks and `~/.claude/settings.json` hook entries). Never manually edit `~/.claude/settings.json` for hook wiring.
+`scripts/sync-hooks.sh` and `scripts/sync-commands.sh` remain available for targeted operations, but `scripts/sync.sh` is the canonical entry point.
 
 `config.json` is machine-local, gitignored state at repo root. `scripts/setup.sh` auto-creates it from `config.example.json` when missing.
 

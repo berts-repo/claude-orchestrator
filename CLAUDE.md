@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repo ships three local MCP servers and a hook system that turns Claude Code into a secure, auditable orchestrator:
 
 - **delegate-web** (`web-delegation-mcp/`) — web search + URL fetch via Gemini, with SSRF protection and content sanitization
-- **codex-delegation** (`delegate/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
-- **audit** (`audit/`) — SQLite audit DB owner and MCP query/config interface
+- **codex-delegation** (`codex-delegation-mcp/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
+- **audit** (`audit-mcp/`) — SQLite audit DB owner and MCP query/config interface
 
 Claude Code wires them together via hooks (`hooks/`) and session instructions (`CLAUDE.global.md`).
 
@@ -19,6 +19,8 @@ Claude Code wires them together via hooks (`hooks/`) and session instructions (`
 ```bash
 # First-time setup (idempotent — safe to re-run)
 bash scripts/setup.sh
+# setup.sh creates repo-root .env + config.json from examples when missing
+# configure delegate-web auth via env var, keyring, or web-delegation-mcp/.env
 
 # Uninstall
 bash scripts/uninstall.sh
@@ -44,8 +46,8 @@ cd web-delegation-mcp && node test-security.mjs
 ```
 Claude Code (orchestrator)
   ├── delegate-web MCP      (web-delegation-mcp/server.mjs) ─── Web API (Gemini/Brave/…)
-  ├── codex-delegation MCP  (delegate/server.js)  ─── codex exec subprocesses
-  └── audit MCP             (audit/server.js) ─── SQLite audit DB (~/.claude/audit.db)
+  ├── codex-delegation MCP  (codex-delegation-mcp/server.js)  ─── codex exec subprocesses
+  └── audit MCP             (audit-mcp/server.js) ─── SQLite audit DB (~/.claude/audit.db)
 ```
 
 Both MCP servers communicate over stdio; Claude Code spawns them as child processes.
@@ -60,7 +62,7 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 - `providers/` — pluggable search backends; active provider set via `SEARCH_PROVIDER` env var (default: `gemini`)
 - Rate limit: 30 req/min per process; output capped at 4000 chars
 
-### delegate
+### codex-delegation MCP (`delegate`)
 
 - `server.js` — MCP server exposing `codex` (single task) and `codex_parallel` (up to 10 simultaneous tasks via `Promise.all`)
 - `config.json` — bootstrap allowed/blocked cwd paths; audit DB `allowed_root:<path>` entries are the primary managed roots

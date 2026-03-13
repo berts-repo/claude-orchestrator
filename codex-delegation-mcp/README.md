@@ -36,10 +36,10 @@ For `codex_parallel`, all subprocesses start simultaneously via `Promise.all`. W
 ## File Map
 
 ```
-delegate/
+codex-delegation-mcp/
 ├── README.md        # This file
 ├── server.js        # MCP server — registers codex and codex_parallel tools
-├── db.js            # SQLite audit DB schema, retention, and task write helpers
+├── ../audit/db.js   # SQLite audit DB schema, retention, and task write helpers
 ├── ../config.json   # Repo-root allowed/blocked cwd roots (machine-local, gitignored)
 ├── package.json     # Dependencies: @modelcontextprotocol/sdk, zod
 └── node_modules/    # Installed by npm install
@@ -60,7 +60,7 @@ delegate/
 ### Step 1 — Install Dependencies
 
 ```bash
-cd ~/git/claude-orchestrator/delegate
+cd ~/git/claude-orchestrator/codex-delegation-mcp
 npm install
 ```
 
@@ -87,10 +87,10 @@ Credentials are stored in `~/.codex/auth.json` and read automatically by the ser
 Make the server executable (it uses a `#!/usr/bin/env node` shebang):
 
 ```bash
-chmod +x ~/git/claude-orchestrator/delegate/server.js
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 claude mcp add -s user delegate \
   --env "CODEX_POOL_ALLOWED_CWD_ROOTS=/home/you/git" \
-  -- ~/git/claude-orchestrator/delegate/server.js
+  -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
 ```
 
 Verify registration:

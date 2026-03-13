@@ -1,13 +1,13 @@
 # Web Delegation MCP Server
 
-MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Default search provider: Gemini API with Google Search grounding.
+MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Default search provider: Gemini API with Google Search grounding (`SEARCH_PROVIDER=gemini`), with optional Brave support.
 
 ## Overview
 
 This server provides Claude Code with internet access through a controlled, auditable channel. When users explicitly request web searches ("search the web for...", "do research on..."), Claude calls this MCP tool instead of using curl/wget directly.
 
 Key features:
-- **Two tools** — `search` (Gemini-grounded search) and `fetch` (URL fetch + Readability extraction)
+- **Two tools** — `search` (provider-backed web search) and `fetch` (URL fetch + Readability extraction)
 - **Pluggable providers** — swap search backends via `SEARCH_PROVIDER` env var (default: `gemini`)
 - **Google Search grounding** — Gemini performs actual Google searches and grounds responses in results
 - **Source attribution** — Every search response includes source URLs for citation
@@ -53,12 +53,12 @@ Name mapping note: register this MCP server as `delegate-web`; in hook/tool matc
 ### Why No OS-Level Sandbox?
 
 Unlike Codex (which executes arbitrary code), this server:
-- **Only makes HTTP API calls** to Google's Gemini endpoint
-- **Has no filesystem write access** beyond its own logs
-- **Cannot execute commands** — it's a pure Node.js API client
-- **Returns only text** — summaries and URLs, never raw HTML
+- **Does not spawn shell commands** — it is a Node.js MCP process
+- **Performs network I/O only for web delegation** — provider API calls (`search`) and SSRF-guarded URL reads (`fetch`)
+- **Can write local audit records when `../audit/db.js` is present** (task metadata only)
+- **Returns extracted text content** rather than raw HTML payloads
 
-Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protection for API-only processes. The real security is in input validation, output sanitization, and the hook-based enforcement layer.
+Kernel-level sandboxing (Seatbelt/Bubblewrap) provides limited additional protection for this network-only delegation process. The real security is in input validation, output sanitization, SSRF controls, and the hook-based enforcement layer.
 
 ### Defense-in-Depth Layers
 
@@ -156,7 +156,7 @@ chmod +x start.sh
 
 ### Step 3 — Configure the API Key
 
-Pick one of these methods (`start.sh` checks them in this order):
+Pick one of these methods (`start.sh` evaluates sources in this order):
 
 **Option A: Environment variable (simplest)**
 
@@ -183,7 +183,7 @@ echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/web-delegation-m
 chmod 600 ~/git/claude-orchestrator/web-delegation-mcp/.env
 ```
 
-> **Note:** `.env` is loaded after the env var and keyring checks. Variables already set in the environment take precedence.
+> **Note:** `start.sh` first checks an already-set `GEMINI_API_KEY`, then tries keyring lookup if unset, then loads `.env`. Because `.env` is loaded last, values in `.env` can override earlier values.
 
 ### Step 4 — Register with Claude Code
 
@@ -244,7 +244,7 @@ Search the web for the latest news about AI
 What should happen:
 1. The `web--inject-web-search-hint.sh` hook detects "search the web" and injects context
 2. Claude calls the `search` MCP tool
-3. The MCP server queries Gemini with Google Search grounding
+3. The MCP server queries the active provider (`gemini` by default, or `brave` when configured)
 4. Claude receives the results wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
 5. Claude synthesizes an answer and cites sources with URLs
 6. For time-sensitive prompts, `web--preempt-recency-queries.sh` injects a pre-inference search hint
@@ -270,10 +270,10 @@ The server registers two tools (`search`, `fetch`) and two resources (`search://
 
 ### Launcher (`start.sh`)
 
-Resolves the API key in this order:
-1. `GEMINI_API_KEY` environment variable (if already set, used as-is)
-2. GNOME Keyring via `secret-tool lookup` (Linux only; skipped if `secret-tool` is not installed)
-3. Local `.env` file (loaded last; may set `GEMINI_API_KEY` if still unset)
+Resolves the API key using this flow:
+1. If `GEMINI_API_KEY` is already set in the process environment, skip keyring lookup
+2. If still unset and `secret-tool` exists, try GNOME Keyring (`secret-tool lookup`)
+3. Load local `.env` file (loaded last; exported values can override earlier values)
 
 Then starts the server with `exec node server.mjs`.
 
@@ -427,14 +427,18 @@ Returns the active server configuration: the current provider name and all avail
 ```json
 {
   "activeProvider": "gemini",
-  "availableProviders": ["gemini", "brave"]
+  "availableProviders": [
+    { "name": "gemini", "available": true },
+    { "name": "brave", "available": false }
+  ],
+  "tools": ["search", "fetch"]
 }
 ```
 
 | Field | Description |
 |-------|-------------|
 | `activeProvider` | The provider currently in use (set by `SEARCH_PROVIDER` env var) |
-| `availableProviders` | All providers registered in `providers/index.mjs` |
+| `availableProviders` | All providers registered in `providers/index.mjs`, with per-provider availability |
 
 ---
 
@@ -459,6 +463,9 @@ The launcher checks three sources in order. Make sure at least one is set:
 ```bash
 # Check environment variable
 echo $GEMINI_API_KEY
+
+# If using Brave provider:
+echo $BRAVE_API_KEY
 
 # Check GNOME Keyring (Linux only)
 secret-tool lookup service mcp-delegate-web account api-key
