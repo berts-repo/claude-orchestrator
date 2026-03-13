@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * codex-delegation-mcp — parallel Codex subprocess dispatcher
+ * delegate — parallel Codex subprocess dispatcher
  *
  * Replaces the single-process `codex mcp-server` delegate.
  * Each task spawns an independent `codex exec` process; codex_parallel
@@ -44,7 +44,7 @@ import {
   upsertSession,
   writeBatchStatus,
   writeCurrentBatchId,
-} from "../audit-mcp/db.js";
+} from "../audit/db.js";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
@@ -457,13 +457,13 @@ function normalizeTask(task, taskLabel = "task") {
   const blockedRoot = config.blockedPaths.find((blocked) => isWithinRoot(normalizedCwd, blocked));
   if (blockedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (codex-delegation-mcp/config.json).`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (delegate/config.json).`
     );
   }
 
   if (allowedCwdRoots.length === 0) {
     throw new Error(
-      `${taskLabel}: no allowed cwd roots configured. Configure roots via codex-delegation-mcp/config.json allowedRoots, audit config keys (allowed_root:<path>), or CODEX_POOL_ALLOWED_CWD_ROOTS.`
+      `${taskLabel}: no allowed cwd roots configured. Configure roots via delegate/config.json allowedRoots, audit config keys (allowed_root:<path>), or CODEX_POOL_ALLOWED_CWD_ROOTS.`
     );
   }
 

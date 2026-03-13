@@ -5,7 +5,7 @@ import { z } from "zod";
 import fs from "fs";
 import { db, DB_PATH } from "./db.js";
 
-const server = new McpServer({ name: "audit-mcp", version: "1.0.0" });
+const server = new McpServer({ name: "audit", version: "1.0.0" });
 
 // --- get_tasks ---
 

@@ -9,14 +9,14 @@
 
 ## Codex Delegation
 
-The `delegate` MCP server is **codex-delegation-mcp** — a parallel subprocess dispatcher.
+The `delegate` MCP server is **delegate** — a parallel subprocess dispatcher.
 Each call spawns an independent `codex exec` process. `codex_parallel` fans out to N processes simultaneously.
 
 - `mcp__delegate__codex` — single task (backward compat, same parameters as before)
 - `mcp__delegate__codex_parallel` — array of tasks (`tasks: [...]`), all run in parallel
 - `codex-reply` is **removed** — processes are ephemeral; pass full context per call
 
-Always set `cwd` to an absolute path. Allowed and blocked paths come from `codex-delegation-mcp/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
+Always set `cwd` to an absolute path. Allowed and blocked paths come from `delegate/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
 
 | Task Type | Tool | Sandbox | Approval Policy |
 |-----------|------|---------|-----------------|

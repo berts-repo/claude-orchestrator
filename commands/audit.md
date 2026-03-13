@@ -16,7 +16,7 @@ Use `mcp__audit__*` tools for all DB access. Do NOT use `sqlite3` shell commands
 
 For DB-backed subcommands (`set-project`, `list-projects`, `set`, `status`, `report`, `log`, `query`):
 - If the audit MCP server is unavailable, print:
-  `Audit MCP server not available — restart Claude Code to register audit-mcp.`
+  `Audit MCP server not available — restart Claude Code to register audit.`
 - Then stop.
 
 For `query <sql>`:

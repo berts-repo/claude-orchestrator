@@ -29,7 +29,7 @@ User prompt: "Search the web for latest Node.js release"
                         │ MCP tool call
                         ▼
                ┌──────────────────┐
-               │  MCP Server      │  web-search-mcp/
+               │  MCP Server      │  web-delegation-mcp/
                │  (this code)     │
                │                  │
                │  • Validates     │
@@ -70,8 +70,8 @@ Kernel-level sandboxing (Seatbelt/Bubblewrap) provides minimal additional protec
 | Untrust markers | Server | Wraps all web content with clear markers |
 | Rate limiting | Server | 30 req/min prevents abuse |
 | `security--restrict-bash-network.sh` | Hook | Blocks curl/wget, forces web access through MCP |
-| `gemini--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use search" context |
-| `gemini--preempt-recency-queries.sh` | Hook | Detects time-sensitive prompts and injects a search hint before inference |
+| `web--inject-web-search-hint.sh` | Hook | Detects web intent, injects "use search" context |
+| `web--preempt-recency-queries.sh` | Hook | Detects time-sensitive prompts and injects a search hint before inference |
 
 ### Trust Boundaries
 
@@ -87,7 +87,7 @@ MCP tool interface               │  Any content after "BEGIN UNTRUSTED"
 ## File Map
 
 ```
-web-search-mcp/
+web-delegation-mcp/
 ├── README.md                    # This file
 ├── server.mjs                   # Main server — registers search and fetch tools
 ├── start.sh                     # Launcher — resolves API key, starts node
@@ -105,9 +105,9 @@ web-search-mcp/
     ├── gemini-provider.mjs      # Gemini + Google Search implementation
     └── brave-provider.mjs       # Brave Search API implementation
 ../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
-    ├── gemini--inject-web-search-hint.sh
+    ├── web--inject-web-search-hint.sh
     ├── security--restrict-bash-network.sh
-    └── gemini--preempt-recency-queries.sh
+    └── web--preempt-recency-queries.sh
 ```
 
 ---
@@ -136,7 +136,7 @@ The free tier allows 15 requests/minute for `gemini-2.5-flash`, which is more th
 ### Step 2 — Install Dependencies
 
 ```bash
-cd ~/git/claude-orchestrator/web-search-mcp
+cd ~/git/claude-orchestrator/web-delegation-mcp
 npm install
 ```
 
@@ -179,8 +179,8 @@ Then enter your key when prompted. `start.sh` calls `secret-tool lookup` to retr
 **Option C: Local .env file (dev convenience)**
 
 ```bash
-echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/web-search-mcp/.env
-chmod 600 ~/git/claude-orchestrator/web-search-mcp/.env
+echo 'GEMINI_API_KEY=your-key-here' > ~/git/claude-orchestrator/web-delegation-mcp/.env
+chmod 600 ~/git/claude-orchestrator/web-delegation-mcp/.env
 ```
 
 > **Note:** `.env` is loaded after the env var and keyring checks. Variables already set in the environment take precedence.
@@ -190,7 +190,7 @@ chmod 600 ~/git/claude-orchestrator/web-search-mcp/.env
 **Option A: CLI (recommended)**
 
 ```bash
-claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
+claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-delegation-mcp/start.sh
 ```
 
 **Option B: Manual config**
@@ -201,7 +201,7 @@ Add to `~/.claude.json`:
 {
   "mcpServers": {
     "delegate-web": {
-      "command": "/home/YOUR_USER/git/claude-orchestrator/web-search-mcp/start.sh"
+      "command": "/home/YOUR_USER/git/claude-orchestrator/web-delegation-mcp/start.sh"
     }
   }
 }
@@ -242,12 +242,12 @@ Search the web for the latest news about AI
 ```
 
 What should happen:
-1. The `gemini--inject-web-search-hint.sh` hook detects "search the web" and injects context
+1. The `web--inject-web-search-hint.sh` hook detects "search the web" and injects context
 2. Claude calls the `search` MCP tool
 3. The MCP server queries Gemini with Google Search grounding
 4. Claude receives the results wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
 5. Claude synthesizes an answer and cites sources with URLs
-6. For time-sensitive prompts, `gemini--preempt-recency-queries.sh` injects a pre-inference search hint
+6. For time-sensitive prompts, `web--preempt-recency-queries.sh` injects a pre-inference search hint
 
 ---
 
@@ -411,7 +411,7 @@ Claude Code will issue a `resources/read` call and show you the current cache st
 **Usage via MCP Inspector:**
 
 ```bash
-cd web-search-mcp
+cd web-delegation-mcp
 npx @modelcontextprotocol/inspector node server.mjs
 ```
 
@@ -464,7 +464,7 @@ echo $GEMINI_API_KEY
 secret-tool lookup service mcp-delegate-web account api-key
 
 # Check .env file
-cat ~/git/claude-orchestrator/web-search-mcp/.env
+cat ~/git/claude-orchestrator/web-delegation-mcp/.env
 ```
 
 ### Claude doesn't use search
@@ -486,7 +486,7 @@ The network blocker hook has some false positives (e.g., a variable named `curl_
 
 MCP server logs go to stderr as JSON. To see them:
 ```bash
-GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/web-search-mcp/server.mjs 2>&1 | jq '.'
+GEMINI_API_KEY="your-key" LOG_LEVEL=debug node ~/git/claude-orchestrator/web-delegation-mcp/server.mjs 2>&1 | jq '.'
 ```
 
 ---

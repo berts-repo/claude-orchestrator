@@ -21,26 +21,26 @@ echo "==> Installing npm dependencies"
 if command -v npm >/dev/null 2>&1; then
   # Prefer npm ci for reproducible installs from lockfiles. If a lockfile is missing,
   # run npm install once to generate it, then subsequent runs use npm ci.
-  if [[ -f "$REPO/web-search-mcp/package-lock.json" ]]; then
+  if [[ -f "$REPO/web-delegation-mcp/package-lock.json" ]]; then
     # No lifecycle scripts are required for this package; ignore scripts to reduce
     # supply-chain risk from dependency install hooks.
-    (cd "$REPO/web-search-mcp" && npm ci --ignore-scripts)
+    (cd "$REPO/web-delegation-mcp" && npm ci --ignore-scripts)
   else
-    (cd "$REPO/web-search-mcp" && npm install --ignore-scripts)
+    (cd "$REPO/web-delegation-mcp" && npm install --ignore-scripts)
   fi
 
-  if [[ -f "$REPO/codex-delegation-mcp/package-lock.json" ]]; then
+  if [[ -f "$REPO/delegate/package-lock.json" ]]; then
     # better-sqlite3 relies on install scripts to provide native bindings.
-    (cd "$REPO/codex-delegation-mcp" && npm ci)
+    (cd "$REPO/delegate" && npm ci)
   else
-    (cd "$REPO/codex-delegation-mcp" && npm install)
+    (cd "$REPO/delegate" && npm install)
   fi
 
-  if [[ -f "$REPO/audit-mcp/package-lock.json" ]]; then
+  if [[ -f "$REPO/audit/package-lock.json" ]]; then
     # better-sqlite3 relies on install scripts to provide native bindings.
-    (cd "$REPO/audit-mcp" && npm ci)
+    (cd "$REPO/audit" && npm ci)
   else
-    (cd "$REPO/audit-mcp" && npm install)
+    (cd "$REPO/audit" && npm install)
   fi
 else
   echo "WARNING: npm is unavailable; skipping dependency installation."
@@ -48,8 +48,8 @@ fi
 
 echo
 echo "==> Ensuring executable bit on codex delegation server"
-chmod +x "$REPO/codex-delegation-mcp/server.js"
-chmod +x "$REPO/audit-mcp/server.js"
+chmod +x "$REPO/delegate/server.js"
+chmod +x "$REPO/audit/server.js"
 
 echo
 echo "==> Ensuring .env exists"
@@ -89,7 +89,7 @@ if command -v claude >/dev/null 2>&1; then
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate-web([^[:alnum:]-]|$)'; then
     echo "delegate-web already registered, skipping."
   else
-    claude mcp add -s user delegate-web -- "$REPO/web-search-mcp/start.sh"
+    claude mcp add -s user delegate-web -- "$REPO/web-delegation-mcp/start.sh"
   fi
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate([^[:alnum:]-]|$)'; then
@@ -98,13 +98,13 @@ if command -v claude >/dev/null 2>&1; then
   else
     claude mcp add -s user delegate \
       --env "CODEX_POOL_ALLOWED_CWD_ROOTS=$ALLOWED_ROOTS" \
-      -- "$REPO/codex-delegation-mcp/server.js"
+      -- "$REPO/delegate/server.js"
   fi
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])audit([^[:alnum:]-]|$)'; then
     echo "audit already registered, skipping."
   else
-    claude mcp add -s user audit -- "$REPO/audit-mcp/server.js"
+    claude mcp add -s user audit -- "$REPO/audit/server.js"
   fi
 else
   echo "WARNING: 'claude' is not installed or not in PATH; skipping MCP registration/validation."

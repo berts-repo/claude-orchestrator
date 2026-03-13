@@ -51,11 +51,11 @@ For the web MCP: register the server as `delegate-web`, while hook/tool matchers
 | | |
 |---|---|
 | Purpose | Web search via Google Search grounding; URL fetching and extraction |
-| Auth | Gemini API key (env var, keyring, or `web-search-mcp/.env`) |
+| Auth | Gemini API key (env var, keyring, or `web-delegation-mcp/.env`) |
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[web-search-mcp/](web-search-mcp/)** |
+| Location | **[web-delegation-mcp/](web-delegation-mcp/)** |
 
 Tools exposed:
 
@@ -69,7 +69,7 @@ Internet access is triggered by explicit user intent:
 * "do some research"
 * "do a deep dive on"
 
-`gemini--preempt-recency-queries.sh` is an intentional exception to the explicit-intent rule: it is pre-authorized proactive search for time-sensitive prompts (for example: "latest", "as of today", "right now").
+`web--preempt-recency-queries.sh` is an intentional exception to the explicit-intent rule: it is pre-authorized proactive search for time-sensitive prompts (for example: "latest", "as of today", "right now").
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
@@ -82,7 +82,7 @@ Returned data is retrieval-only: short summaries, source URLs, brief excerpts. R
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[audit-mcp/](audit-mcp/)** |
+| Location | **[audit/](audit/)** |
 
 Tools exposed:
 
@@ -106,7 +106,7 @@ The audit server is the DB owner. It initialises the schema, runs retention clea
 | Transport | stdio |
 | Scope | Global (user) |
 | Status | Stable |
-| Location | **[codex-delegation-mcp/](codex-delegation-mcp/)** |
+| Location | **[delegate/](delegate/)** |
 
 Tools exposed:
 
@@ -121,7 +121,7 @@ Internally, `server.js` now deduplicates shared task lifecycle logic (used by bo
 The codex-delegation server validates every delegated task `cwd` against allowed root prefixes.
 
 - Primary project-managed roots: audit DB config keys `allowed_root:<absolute-path>` (managed via `/audit add-path`, `list-paths`, `remove-path`)
-- Bootstrap defaults: `codex-delegation-mcp/config.json` (`allowedRoots`)
+- Bootstrap defaults: `delegate/config.json` (`allowedRoots`)
 - Override/additive env var: `CODEX_POOL_ALLOWED_CWD_ROOTS` (comma-separated absolute paths, e.g. `/home/me/git,/tmp`)
 - Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
 
@@ -153,8 +153,8 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 
 | Hook | Event | Purpose |
 |---|---|---|
-| `gemini--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use search" context |
-| `gemini--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a search hint before inference |
+| `web--inject-web-search-hint.sh` | UserPromptSubmit | Detects web intent phrases and injects "use search" context |
+| `web--preempt-recency-queries.sh` | UserPromptSubmit | Detects time-sensitive prompts and injects a search hint before inference |
 | `security--restrict-bash-network.sh` | PreToolUse (Bash) | Blocks curl/wget/ssh/etc — forces web access through MCP |
 | `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files unconditionally |
 | `security--protect-sensitive-writes.sh` | PreToolUse (Bash, Edit, Write) | Blocks direct writes/edits/deletes against `.env*` and `.ssh` paths (except `.env.example`/`.env.template`/`.env.sample`) |
@@ -174,7 +174,7 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 #### Audit DB — `~/.claude/audit.db`
 
-Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit-mcp/` and `codex-delegation-mcp/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
+Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit/` and `delegate/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
 
 - Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing)
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
@@ -200,7 +200,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 | Command | Purpose |
 |---|---|
 | `/audit` | Query and browse the SQLite audit log (`~/.claude/audit.db`) |
-| `/clauded` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
+| `/direct` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
 | `/report` | Generate a concise monitoring report from audit DB + security events |
 | `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
 | `/session` | Capture or restore session snapshots in `.SESSION.md` |
@@ -285,22 +285,22 @@ cp CLAUDE.global.md ~/.claude/CLAUDE.md
 cp CLAUDE.global.md CLAUDE.md
 
 # 3. Install dependencies for all MCP servers
-cd web-search-mcp && npm install
-cd ../codex-delegation-mcp && npm install  # better-sqlite3 requires native bindings (install scripts run)
-cd ../audit-mcp && npm install             # better-sqlite3 requires native bindings (install scripts run)
+cd web-delegation-mcp && npm install
+cd ../delegate && npm install  # better-sqlite3 requires native bindings (install scripts run)
+cd ../audit && npm install             # better-sqlite3 requires native bindings (install scripts run)
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
-cp web-search-mcp/.env.example web-search-mcp/.env
-chmod 600 web-search-mcp/.env
-# Edit web-search-mcp/.env and add your GEMINI_API_KEY
+cp web-delegation-mcp/.env.example web-delegation-mcp/.env
+chmod 600 web-delegation-mcp/.env
+# Edit web-delegation-mcp/.env and add your GEMINI_API_KEY
 
 # 5. Register MCP servers (all three require execute bit — shebang-based entry points)
-chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
-chmod +x ~/git/claude-orchestrator/audit-mcp/server.js
-claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
-claude mcp add -s user audit -- ~/git/claude-orchestrator/audit-mcp/server.js
+chmod +x ~/git/claude-orchestrator/delegate/server.js
+chmod +x ~/git/claude-orchestrator/audit/server.js
+claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-delegation-mcp/start.sh
+claude mcp add -s user delegate -- ~/git/claude-orchestrator/delegate/server.js
+claude mcp add -s user audit -- ~/git/claude-orchestrator/audit/server.js
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json

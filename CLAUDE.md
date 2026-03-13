@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo ships three local MCP servers and a hook system that turns Claude Code into a secure, auditable orchestrator:
 
-- **delegate-web** (`web-search-mcp/`) — web search + URL fetch via Gemini, with SSRF protection and content sanitization
-- **codex-delegation** (`codex-delegation-mcp/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
-- **audit** (`audit-mcp/`) — SQLite audit DB owner and MCP query/config interface
+- **delegate-web** (`web-delegation-mcp/`) — web search + URL fetch via Gemini, with SSRF protection and content sanitization
+- **codex-delegation** (`delegate/`) — parallel Codex subprocess dispatcher; each `codex exec --ephemeral` call is an isolated subprocess
+- **audit** (`audit/`) — SQLite audit DB owner and MCP query/config interface
 
 Claude Code wires them together via hooks (`hooks/`) and session instructions (`CLAUDE.global.md`).
 
@@ -27,14 +27,14 @@ bash scripts/sync-hooks.sh
 # Validate hooks frontmatter without applying changes
 bash scripts/sync-hooks.sh --check
 
-# Test web-search-mcp
-cd web-search-mcp && node test-security.mjs
+# Test web-delegation-mcp
+cd web-delegation-mcp && node test-security.mjs
 
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
-# Available: /audit, /clauded, /report, /summarize, /session
+# Available: /audit, /direct, /report, /summarize, /session
 # /audit inspects and manages the SQLite audit DB (includes root management via add-path/list-paths)
-# /clauded handles a task directly with Claude's built-in tools (bypasses MCP delegation)
+# /direct handles a task directly with Claude's built-in tools (bypasses MCP delegation)
 #   --allow codex  permit Codex MCP  |  --allow web  permit Web MCP  |  --allow all  permit both
 # /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
 ```
@@ -43,15 +43,15 @@ bash scripts/sync-commands.sh
 
 ```
 Claude Code (orchestrator)
-  ├── delegate-web MCP      (web-search-mcp/server.mjs) ─── Web API (Gemini/Brave/…)
-  ├── codex-delegation MCP  (codex-delegation-mcp/server.js)  ─── codex exec subprocesses
-  └── audit MCP             (audit-mcp/server.js) ─── SQLite audit DB (~/.claude/audit.db)
+  ├── delegate-web MCP      (web-delegation-mcp/server.mjs) ─── Web API (Gemini/Brave/…)
+  ├── codex-delegation MCP  (delegate/server.js)  ─── codex exec subprocesses
+  └── audit MCP             (audit/server.js) ─── SQLite audit DB (~/.claude/audit.db)
 ```
 
 Both MCP servers communicate over stdio; Claude Code spawns them as child processes.
 For the web server: Claude MCP registration uses `delegate-web`, while hook/tool matcher names use the `delegate_web` namespace (`mcp__delegate_web__*`).
 
-### web-search-mcp
+### web-delegation-mcp
 
 - `server.mjs` — main entry, registers `search` and `fetch` MCP tools
 - `lib/fetcher.mjs` — URL fetching with SSRF blocklist (private IPs, metadata endpoints)
@@ -60,7 +60,7 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 - `providers/` — pluggable search backends; active provider set via `SEARCH_PROVIDER` env var (default: `gemini`)
 - Rate limit: 30 req/min per process; output capped at 4000 chars
 
-### codex-delegation-mcp
+### delegate
 
 - `server.js` — MCP server exposing `codex` (single task) and `codex_parallel` (up to 10 simultaneous tasks via `Promise.all`)
 - `config.json` — bootstrap allowed/blocked cwd paths; audit DB `allowed_root:<path>` entries are the primary managed roots
@@ -87,7 +87,7 @@ Guidance hooks follow a pre-inference design: fire on `UserPromptSubmit`, not af
 Hook naming convention: `<prefix>--<purpose>.sh`
 - `security--` — blocks/logs dangerous actions
 - `codex--` — Codex delegation hints and enforcement
-- `gemini--` — pre-inference web/recency hint injection
+- `web--` — pre-inference web/recency hint injection
 - `shared--` — helpers sourced by other hooks (marked `HOOK_HELPER: true`)
 
 ### Config file locations

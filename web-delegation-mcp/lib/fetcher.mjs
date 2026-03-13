@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
-const USER_AGENT = "web-search-mcp/0.1 (MCP fetch tool)";
+const USER_AGENT = "web-delegation-mcp/0.1 (MCP fetch tool)";
 
 function errorWithCode(message, code) {
   const err = new Error(message);

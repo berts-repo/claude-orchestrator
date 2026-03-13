@@ -322,7 +322,7 @@ try {
   statements = setupStatements(db);
   runRetentionCleanup();
 } catch (error) {
-  console.warn(`[audit-mcp] SQLite logging disabled: ${error.message}`);
+  console.warn(`[audit] SQLite logging disabled: ${error.message}`);
 }
 
 export { db };

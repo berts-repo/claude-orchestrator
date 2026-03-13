@@ -2,7 +2,7 @@
 # UserPromptSubmit hook
 # Detects prompts that imply time-sensitive information needs and injects
 # context directing Claude to use search proactively — before any inference.
-# Replaces the Stop-hook approach (gemini--require-web-if-recency.sh) which
+# Replaces the Stop-hook approach (web--require-web-if-recency.sh) which
 # fired too late: tokens were already spent on a response that needed retrying.
 # HOOK_EVENT: UserPromptSubmit
 # HOOK_TIMEOUT: 5
