@@ -198,6 +198,7 @@ function setupStatements(conn) {
       WHERE id = @id
     `),
     getConfig: conn.prepare("SELECT value FROM config WHERE key = ?"),
+    getAllConfig: conn.prepare("SELECT key, value FROM config"),
     insertTaskTag: conn.prepare(`
       INSERT OR IGNORE INTO task_tags (task_id, tag, tag_source)
       VALUES (@task_id, @tag, @tag_source)
@@ -507,6 +508,14 @@ export function getConfig(key, defaultValue) {
   if (!dbReady()) return defaultValue;
   const row = statements.getConfig.get(key);
   return row?.value ?? defaultValue;
+}
+
+export function getAllowedRoots() {
+  if (!dbReady()) return [];
+  const rows = statements.getAllConfig.all();
+  return rows
+    .filter((row) => row.key.startsWith("allowed_root:"))
+    .map((row) => row.key.slice("allowed_root:".length));
 }
 
 export function autoTag(taskId, promptSlug, sandbox) {

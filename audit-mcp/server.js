@@ -108,14 +108,14 @@ const ALLOWED_CONFIG_KEYS = new Set([
 
 server.tool(
   "set_config",
-  "Write a config value to the audit DB. Only an allowlisted set of keys is accepted.",
+  "Write a config value to the audit DB. Only an allowlisted set of keys is accepted, plus key patterns prompt_storage_project:<name> and allowed_root:<path>.",
   {
     key: z.string(),
     value: z.string(),
   },
   async ({ key, value }) => {
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
-    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^prompt_storage_project:.+$/.test(key)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^prompt_storage_project:.+$/.test(key) && !/^allowed_root:.+$/.test(key)) {
       return {
         content: [{ type: "text", text: `Error: key '${key}' is not in the allowed config keys list` }],
         isError: true,
@@ -126,6 +126,30 @@ server.tool(
        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
     ).run(key, value);
     return { content: [{ type: "text", text: JSON.stringify({ ok: true, key, value }) }] };
+  }
+);
+
+// --- delete_config ---
+
+server.tool(
+  "delete_config",
+  "Delete a config key from the audit DB. Only keys matching the same patterns as set_config are deletable.",
+  {
+    key: z.string(),
+  },
+  async ({ key }) => {
+    if (!db) return { content: [{ type: "text", text: "DB not available" }] };
+    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^prompt_storage_project:.+$/.test(key) && !/^allowed_root:.+$/.test(key)) {
+      return {
+        content: [{ type: "text", text: `Error: key '${key}' is not in the allowed config keys list` }],
+        isError: true,
+      };
+    }
+    const result = db.prepare("DELETE FROM config WHERE key = ?").run(key);
+    if (result.changes > 0) {
+      return { content: [{ type: "text", text: `Deleted config key: '${key}'` }] };
+    }
+    return { content: [{ type: "text", text: `Key '${key}' not found in config` }] };
   }
 );
 

@@ -5,14 +5,16 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `list-projects`
 - `set <key> <value>`
 - `status`
+- `report [days]`
 - `log [N] [--list] [--codex|--web] [keyword]`
 - `query <sql>`
 - `add-root <path>`
 - `list-roots`
+- `remove-root <path>`
 
 Use `mcp__audit__*` tools for all DB access. Do NOT use `sqlite3` shell commands.
 
-For DB-backed subcommands (`set-project`, `list-projects`, `set`, `status`, `log`, `query`):
+For DB-backed subcommands (`set-project`, `list-projects`, `set`, `status`, `report`, `log`, `query`):
 - If the audit MCP server is unavailable, print:
   `Audit MCP server not available — restart Claude Code to register audit-mcp.`
 - Then stop.
@@ -52,6 +54,12 @@ For `status`:
   - Slowest parallel batches: `get_report`
   - Recall by prompt slug keyword: `get_tasks` with `keyword=<term>`
 
+For `report [days]`:
+- Defaults: `days = 7`.
+- If `days` is provided, parse it as a positive integer (1-365). If invalid, print: `Error: days must be an integer between 1 and 365.` and stop.
+- Call `mcp__audit__get_report` with `days`.
+- Display sections from the response: `usage`, `failures`, `slowest_batches`, and `running`.
+
 For `log [N] [--list] [--codex|--web] [keyword]`:
 - Defaults: `N = 10`, no type filter, no keyword filter, full mode (not `--list`).
 - Parse args in this order:
@@ -74,31 +82,23 @@ For `log [N] [--list] [--codex|--web] [keyword]`:
   - If no rows: `No matching audit tasks found.`
 
 For `list-roots`:
-- Run: `python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.claude.json'))); print(d.get('mcpServers',{}).get('delegate',{}).get('env',{}).get('CODEX_POOL_ALLOWED_CWD_ROOTS',''))"`
-- Split the result on commas and display as a numbered list.
-- If empty or missing, print: `No roots configured. Run setup.sh to initialize.`
+- Run `mcp__audit__run_query` with:
+  `SELECT key, value FROM config WHERE key LIKE 'allowed_root:%' ORDER BY key`
+- Display as a numbered list of absolute paths by stripping the `allowed_root:` prefix from each `key`.
+- If no rows, print: `No roots configured in audit DB.`
 
 For `add-root <path>`:
 - Validate `<path>` starts with `/`. If not, print: `Error: path must be absolute.` and stop.
-- Run this Python snippet via Bash to append the path (deduplicated) and write back:
-  ```bash
-  python3 -c "
-  import json, os, sys
-  p = os.path.expanduser('~/.claude.json')
-  d = json.load(open(p))
-  env = d.setdefault('mcpServers', {}).setdefault('delegate', {}).setdefault('env', {})
-  roots = [r.strip() for r in env.get('CODEX_POOL_ALLOWED_CWD_ROOTS', '').split(',') if r.strip()]
-  new = sys.argv[1]
-  if new not in roots:
-      roots.append(new)
-  env['CODEX_POOL_ALLOWED_CWD_ROOTS'] = ','.join(roots)
-  open(p, 'w').write(json.dumps(d, indent=2) + chr(10))
-  print('Added:', new)
-  print('All roots:', env['CODEX_POOL_ALLOWED_CWD_ROOTS'])
-  " "$path"
-  ```
-  (Pass the actual path as the `"$path"` argument when running.)
-- Print confirmation and remind the user: **Restart Claude Code for the change to take effect.**
+- Call `mcp__audit__set_config` with:
+  - `key = "allowed_root:<path>"`
+  - `value = "true"`
+- Print confirmation that the root was added.
+
+For `remove-root <path>`:
+- Validate `<path>` starts with `/`. If not, print: `Error: path must be absolute.` and stop.
+- Call `mcp__audit__delete_config` with:
+  - `key = "allowed_root:<path>"`
+- Print confirmation that the root was removed.
 
 Output requirements:
 - Use clean markdown tables where applicable.

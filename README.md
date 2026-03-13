@@ -90,6 +90,7 @@ Tools exposed:
 * `get_report` — pre-built analytics: usage breakdown, project failure rates, slowest batches, running tasks
 * `get_status` — DB health check: config values, row counts per table, file size
 * `set_config` — write an allowlisted config key to the DB (retention periods, full-output storage flags)
+* `delete_config` — remove an allowlisted config key from the DB (including `allowed_root:<path>` entries)
 * `run_query` — run a raw `SELECT` against the audit DB (only `SELECT` statements permitted)
 
 The audit server is the DB owner. It initialises the schema, runs retention cleanup at startup, and is the only server that exposes the DB to Claude via MCP tools. The codex-delegation server writes to the same `~/.claude/audit.db` file via the shared `db.js` module.
@@ -113,25 +114,26 @@ Tools exposed:
 * `codex_parallel` — fans out up to 10 tasks simultaneously via `Promise.all`, bypassing MCP call serialization
 
 Each call is ephemeral — full task context must be provided per call. Sandboxing is handled by the Codex CLI's `--sandbox` flag.
+Internally, `server.js` now deduplicates shared task lifecycle logic (used by both handlers) via three private helpers: `buildTaskRecord(task, state, overrides)`, `buildStoredOutputs(result, promptText, project, promptCap)`, and `buildFinalizeUpdate(result, storedOutputs, startedAt)`. These helpers are implementation details only and are not a public MCP API.
 
-### Allowed Working Directory Roots (`CODEX_POOL_ALLOWED_CWD_ROOTS`)
+### Allowed Working Directory Roots (Audit DB Primary, Env Override Secondary)
 
 The codex-delegation server validates every delegated task `cwd` against allowed root prefixes.
 
-- Env var: `CODEX_POOL_ALLOWED_CWD_ROOTS`
-- Format: comma-separated absolute paths (for example: `/home/me/git,/tmp`)
-- Default behavior: if unset, allowed roots come from `config.json` (`allowedRoots`)
+- Primary project-managed roots: audit DB config keys `allowed_root:<absolute-path>` (managed via `/audit add-root`, `list-roots`, `remove-root`)
+- Bootstrap defaults: `codex-delegation-mcp/config.json` (`allowedRoots`)
+- Override/additive env var: `CODEX_POOL_ALLOWED_CWD_ROOTS` (comma-separated absolute paths, e.g. `/home/me/git,/tmp`)
 - Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
 
 Common failure message:
 
 ```text
-invalid cwd '...'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED_CWD_ROOTS (current: ...)
+invalid cwd '...'. cwd must match one of the configured allowed roots (current: ...)
 ```
 
 Remediation:
-- Set `CODEX_POOL_ALLOWED_CWD_ROOTS` to include your project root(s)
-- Or run `/audit add-root <absolute-path>` to append a root to delegate MCP config, then restart Claude Code
+- Run `/audit add-root <absolute-path>` to persist a root in the audit DB
+- Optionally set `CODEX_POOL_ALLOWED_CWD_ROOTS` for temporary per-process overrides/additions
 - Ensure delegated task `cwd` uses an absolute path inside one of those roots
 
 ---
@@ -160,10 +162,8 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
 | `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
 | `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
-| `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Records start time for duration tracking |
-| `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
-| `web--log-start.sh` | PreToolUse (`mcp__delegate_web__*`) | Records web delegation start markers used for duration tracking in delegation logs |
-| `shared--codex-log-helpers.sh` | (helper) | Codex logging helpers; `codex_log_correlation_key` hashes the full prompt to avoid parallel-call collisions |
+| `web--log-start.sh` | PreToolUse (`mcp__delegate_web__*`) | Records web delegation start markers used for duration tracking |
+| `shared--codex-log-helpers.sh` | (helper) | Delegation correlation helpers; `codex_log_correlation_key` hashes full prompt inputs to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
 To block an additional Task subagent type, add a line in `hooks/blocked-subagents.conf` and run `bash scripts/sync-hooks.sh`.
@@ -174,35 +174,25 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 #### Audit DB — `~/.claude/audit.db`
 
-Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit-mcp/` and `codex-delegation-mcp/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `run_query`).
+Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit-mcp/` and `codex-delegation-mcp/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
 
-- Stores task/delegation records for Codex and web calls
+- Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing)
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
 - Stores `output_truncated` for all tasks and `output_full` when full-output storage is enabled
 - Use `/audit` for direct SQLite queries/config updates; the `/audit` slash command calls `mcp__audit__*` tools under the hood
-
-**Summary index** — `~/.claude/logs/delegations.jsonl`
-- Short identifying summary (first line of prompt, truncated to 80 chars)
-- Metadata: timestamp, level, session_id, tool, sandbox mode, call_id, success, duration_ms
-- `detail` field points to the full prompt/response file
-- FIFO rotation keeps the last 100 entries
+- Web delegation task records are not yet written to the audit DB
 
 **Duration tracking** — `~/.claude/logs/.pending/`
-- PreToolUse hook records start time; PostToolUse hook computes `duration_ms`
+- PreToolUse hooks record start time for web delegation duration tracking
 - Pending markers are cleaned up automatically on completion
-
-**Detail files** — `~/.claude/logs/details/`
-- Codex: `{threadId}.jsonl` — one JSONL entry per turn, appended across turns of the same thread
-- Gemini: `gemini-{epoch}-{pid}.jsonl` — one entry per call
-- Auto-deleted after 30 days (time-based retention)
 
 **Security events** — `~/.claude/logs/security-events.jsonl`
 - Logged automatically when any PreToolUse hook denies an action
 - Fields: timestamp, level, session_id, hook, tool, action, severity (low/medium/high/critical), pattern_matched, command_preview, cwd
 - Severity mapping: destructive commands = high, network/sensitive reads = medium, blocked subagents = low
 - FIFO rotation keeps the last 200 entries
-- Run `/monitor` for a dashboard view of both delegation and security logs
+- Run `/report` for a dashboard view of audit DB metrics plus security events
 ### Slash Commands
 
 Global slash commands are installed to `~/.claude/commands/`:
@@ -211,7 +201,6 @@ Global slash commands are installed to `~/.claude/commands/`:
 |---|---|
 | `/audit` | Query and browse the SQLite audit log (`~/.claude/audit.db`) |
 | `/clauded` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
-| `/monitor` | Dashboard showing delegation stats and security event analysis |
 | `/report` | Generate a concise monitoring report from audit DB + security events |
 | `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
 | `/session` | Capture or restore session snapshots in `.SESSION.md` |
@@ -276,7 +265,7 @@ All provider-specific logic remains inside the MCP servers.
 - **Claude Code CLI** (`claude`) — installed and authenticated
 - **Node.js v20+** — for the Gemini MCP server
 - **jq** — JSON parsing in hooks (`sudo pacman -S jq` / `brew install jq`)
-- **sqlite3** — required by `/audit`, `/monitor`, and DB-backed audit hooks
+- **sqlite3** — required by `/audit`, `/report`, and DB-backed audit hooks
 - **Codex CLI** (optional) — for code delegations (`codex login` for auth)
 
 ---

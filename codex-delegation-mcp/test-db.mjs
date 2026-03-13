@@ -5,8 +5,9 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const require = createRequire(import.meta.url);
-const BetterSqlite3 = require("better-sqlite3");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const requireAudit = createRequire(path.resolve(__dirname, "../audit-mcp/package.json"));
+const BetterSqlite3 = requireAudit("better-sqlite3");
 
 function runTest(name, fn) {
   try {
@@ -24,7 +25,7 @@ async function loadDbInternals() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const tempRoot = fs.mkdtempSync(path.join(scriptDir, ".db-test-module-"));
   const modulePath = path.join(tempRoot, "db-testable.mjs");
-  const sourcePath = new URL("./db.js", import.meta.url);
+  const sourcePath = new URL("../audit-mcp/db.js", import.meta.url);
   const source = fs.readFileSync(sourcePath, "utf8");
   const patchedSource = `${source}\nexport { initSchema, initDefaults };\n`;
   fs.writeFileSync(modulePath, patchedSource, "utf8");
@@ -85,6 +86,10 @@ if (
       CREATE TABLE tasks (
         id INTEGER PRIMARY KEY,
         invocation_id TEXT UNIQUE
+      );
+      CREATE TABLE config (
+        key TEXT PRIMARY KEY,
+        value TEXT
       );
     `);
     const before = getTaskColumns(conn);

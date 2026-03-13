@@ -34,6 +34,7 @@ import {
   cleanBatchStatus,
   completeBatch,
   getConfig,
+  getAllowedRoots,
   insertBatch,
   insertTask,
   redact,
@@ -102,7 +103,8 @@ let sessionInitialized = false;
 
 function parseAllowedCwdRoots() {
   const configured = process.env.CODEX_POOL_ALLOWED_CWD_ROOTS;
-  const defaultRoots = config.allowedRoots;
+  const auditRoots = getAllowedRoots();
+  const defaultRoots = [...config.allowedRoots, ...auditRoots];
   const roots = [...defaultRoots, ...(configured ? configured.split(",") : [])]
     .map((root) => root.trim())
     .filter(Boolean)
@@ -111,8 +113,6 @@ function parseAllowedCwdRoots() {
     .map((root) => toCanonicalPath(path.resolve(root)));
   return Array.from(new Set(roots));
 }
-
-const ALLOWED_CWD_ROOTS = parseAllowedCwdRoots();
 
 function logDbError(context, error) {
   console.warn(`[codex-audit] ${context}: ${error.message}`);
@@ -440,9 +440,10 @@ function getBlockedHomePath(normalizedCwd) {
 
 
 function normalizeTask(task, taskLabel = "task") {
+  const allowedCwdRoots = parseAllowedCwdRoots();
   if (!path.isAbsolute(task.cwd)) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${task.cwd}'. cwd must be an absolute path within allowed roots: ${ALLOWED_CWD_ROOTS.join(", ")}`
+      `${taskLabel}: invalid cwd '${task.cwd}'. cwd must be an absolute path within allowed roots: ${allowedCwdRoots.join(", ")}`
     );
   }
 
@@ -460,16 +461,16 @@ function normalizeTask(task, taskLabel = "task") {
     );
   }
 
-  if (ALLOWED_CWD_ROOTS.length === 0) {
+  if (allowedCwdRoots.length === 0) {
     throw new Error(
-      `${taskLabel}: no allowed cwd roots configured. Set CODEX_POOL_ALLOWED_CWD_ROOTS to explicit project/repo root path(s).`
+      `${taskLabel}: no allowed cwd roots configured. Configure roots via codex-delegation-mcp/config.json allowedRoots, audit config keys (allowed_root:<path>), or CODEX_POOL_ALLOWED_CWD_ROOTS.`
     );
   }
 
-  const inAllowedRoot = ALLOWED_CWD_ROOTS.some((root) => isWithinRoot(normalizedCwd, root));
+  const inAllowedRoot = allowedCwdRoots.some((root) => isWithinRoot(normalizedCwd, root));
   if (!inAllowedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must match an allowed root prefix from CODEX_POOL_ALLOWED_CWD_ROOTS (current: ${ALLOWED_CWD_ROOTS.join(", ")}).`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. cwd must match one of the configured allowed roots (current: ${allowedCwdRoots.join(", ")}).`
     );
   }
 
@@ -519,6 +520,95 @@ function formatParallelResults(results) {
     })
     .join("\n\n---\n\n");
   return header + "\n" + body;
+}
+
+function buildTaskRecord(task, state, overrides) {
+  return {
+    invocation_id: state.invocationId,
+    batch_id: state.batchId,
+    session_id: SESSION_ID,
+    parent_task_id: null,
+    task_index: state.taskIndex,
+    tool_type: "codex",
+    project: state.project,
+    cwd: task.cwd,
+    prompt_slug: state.promptSlug,
+    prompt_hash: toPromptHash(task.prompt),
+    prompt: null,
+    url: null,
+    sandbox: task.sandbox,
+    approval: task["approval-policy"],
+    model: task.model ?? null,
+    skip_git_check: task["skip-git-repo-check"] ? 1 : 0,
+    started_at: overrides.started_at,
+    ended_at: null,
+    duration_ms: null,
+    exit_code: null,
+    status: overrides.status,
+    failure_reason: null,
+    timed_out: 0,
+    output_capped: 0,
+    stdout_bytes: 0,
+    stderr_bytes: 0,
+    output_truncated: null,
+    error_text: null,
+    redaction_count: 0,
+    token_est: state.tokenEst,
+    cost_est_usd: null,
+  };
+}
+
+function buildStoredOutputs(result, promptText, project, promptCap) {
+  const failed = !result.success;
+  let redactionCount = 0;
+  let promptValue = null;
+  let outputFullValue = null;
+  let errorText = null;
+
+  if (failed || shouldStoreFullPrompt(project)) {
+    const redacted = redact(promptText.slice(0, promptCap));
+    promptValue = redacted.text;
+    redactionCount += redacted.count;
+  }
+
+  const redactedOutput = redact(toStoredOutput(result));
+  const outputValue = redactedOutput.text;
+  redactionCount += redactedOutput.count;
+
+  if (shouldStoreFullOutput(project)) {
+    const redacted = redact(toStoredOutputFull(result));
+    outputFullValue = redacted.text;
+    redactionCount += redacted.count;
+  }
+
+  if (failed) {
+    const redacted = redact(toStoredError(result));
+    errorText = redacted.text;
+    redactionCount += redacted.count;
+  }
+
+  return { promptValue, outputValue, outputFullValue, errorText, redactionCount };
+}
+
+function buildFinalizeUpdate(result, storedOutputs, startedAt) {
+  const failed = !result.success;
+  return {
+    started_at: startedAt,
+    ended_at: result.finishedAt,
+    duration_ms: result.finishedAt - startedAt,
+    exit_code: result.exitCode,
+    status: failed ? "failed" : "done",
+    failure_reason: toFailureReason(result),
+    timed_out: result.timedOut ? 1 : 0,
+    output_capped: result.outputCapped ? 1 : 0,
+    stdout_bytes: result.stdoutBytes,
+    stderr_bytes: result.stderrBytes,
+    prompt: storedOutputs.promptValue,
+    output_truncated: storedOutputs.outputValue,
+    output_full: storedOutputs.outputFullValue,
+    error_text: storedOutputs.errorText,
+    redaction_count: storedOutputs.redactionCount,
+  };
 }
 
 // ── MCP Server ─────────────────────────────────────────────────────────────
@@ -624,6 +714,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const promptSlug = toPromptSlug(task.prompt);
     const project = path.basename(task.cwd);
     const tokenEst = Math.ceil(task.prompt.length / 4);
+    const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
+    const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
     const statusTasks = [{
       index: 0,
       status: "running",
@@ -638,39 +730,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ensureSession(task.model);
     try {
       insertBatch(batchId, SESSION_ID, 1);
-      const taskId = insertTask({
-        invocation_id: invocationId,
-        batch_id: batchId,
-        session_id: SESSION_ID,
-        parent_task_id: null,
-        task_index: 0,
-        tool_type: "codex",
-        project,
-        cwd: task.cwd,
-        prompt_slug: promptSlug,
-        prompt_hash: toPromptHash(task.prompt),
-        prompt: null,
-        url: null,
-        sandbox: task.sandbox,
-        approval: task["approval-policy"],
-        model: task.model ?? null,
-        skip_git_check: task["skip-git-repo-check"] ? 1 : 0,
-        started_at: batchStart,
-        ended_at: null,
-        duration_ms: null,
-        exit_code: null,
-        status: "running",
-        failure_reason: null,
-        timed_out: 0,
-        output_capped: 0,
-        stdout_bytes: 0,
-        stderr_bytes: 0,
-        output_truncated: null,
-        error_text: null,
-        redaction_count: 0,
-        token_est: tokenEst,
-        cost_est_usd: null,
-      });
+      const taskId = insertTask(
+        buildTaskRecord(
+          task,
+          { invocationId, batchId, promptSlug, project, tokenEst, taskIndex: 0 },
+          { status: "running", started_at: batchStart }
+        )
+      );
       autoTag(taskId, promptSlug, task.sandbox);
       writeBatchStatus(batchId, statusTasks);
     } catch (error) {
@@ -678,63 +744,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const result = await runCodexContainer(task, 0, batchStart);
-    const failed = !result.success;
-    const failureReason = toFailureReason(result);
-    let redactionCount = 0;
-    let promptValue = null;
-    let outputValue = null;
-    let errorText = null;
-
-    const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
-    const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
-
-    if (failed || shouldStoreFullPrompt(project)) {
-      const redacted = redact(task.prompt.slice(0, promptCap));
-      promptValue = redacted.text;
-      redactionCount += redacted.count;
-    }
-    {
-      const redacted = redact(toStoredOutput(result));
-      outputValue = redacted.text;
-      redactionCount += redacted.count;
-    }
-    let outputFullValue = null;
-    if (shouldStoreFullOutput(project)) {
-      const redacted = redact(toStoredOutputFull(result));
-      outputFullValue = redacted.text;
-      redactionCount += redacted.count;
-    }
-    if (failed) {
-      const redacted = redact(toStoredError(result));
-      errorText = redacted.text;
-      redactionCount += redacted.count;
-    }
+    const storedOutputs = buildStoredOutputs(result, task.prompt, project, promptCap);
 
     try {
-      updateTask(invocationId, {
-        ended_at: result.finishedAt,
-        duration_ms: result.finishedAt - result.startedAt,
-        exit_code: result.exitCode,
-        status: failed ? "failed" : "done",
-        failure_reason: failureReason,
-        timed_out: result.timedOut ? 1 : 0,
-        output_capped: result.outputCapped ? 1 : 0,
-        stdout_bytes: result.stdoutBytes,
-        stderr_bytes: result.stderrBytes,
-        prompt: promptValue,
-        output_truncated: outputValue,
-        output_full: outputFullValue,
-        error_text: errorText,
-        redaction_count: redactionCount,
-      });
+      updateTask(invocationId, buildFinalizeUpdate(result, storedOutputs, result.startedAt));
       statusTasks[0] = {
         ...statusTasks[0],
-        status: failed ? "failed" : "done",
+        status: result.success ? "done" : "failed",
         endedAt: result.finishedAt,
         durationMs: result.finishedAt - result.startedAt,
       };
       writeBatchStatus(batchId, statusTasks);
-      completeBatch(batchId, failed ? 1 : 0, tokenEst);
+      completeBatch(batchId, result.success ? 0 : 1, tokenEst);
       cleanBatchStatus(batchId);
     } catch (error) {
       logDbError("single task finalize failed", error);
@@ -760,6 +781,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const invocationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const batchId = randomUUID();
     const batchStart = Date.now();
+    const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
+    const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
     writeCurrentBatchId(batchId, invocationId);
     const taskStates = normalizedTasks.map((task, index) => ({
       index,
@@ -778,39 +801,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       insertBatch(batchId, SESSION_ID, normalizedTasks.length);
       for (const state of taskStates) {
         const sourceTask = normalizedTasks[state.index];
-        const taskId = insertTask({
-          invocation_id: state.invocationId,
-          batch_id: batchId,
-          session_id: SESSION_ID,
-          parent_task_id: null,
-          task_index: state.index,
-          tool_type: "codex",
-          project: state.project,
-          cwd: sourceTask.cwd,
-          prompt_slug: state.promptSlug,
-          prompt_hash: toPromptHash(sourceTask.prompt),
-          prompt: null,
-          url: null,
-          sandbox: sourceTask.sandbox,
-          approval: sourceTask["approval-policy"],
-          model: sourceTask.model ?? null,
-          skip_git_check: sourceTask["skip-git-repo-check"] ? 1 : 0,
-          started_at: null,
-          ended_at: null,
-          duration_ms: null,
-          exit_code: null,
-          status: "queued",
-          failure_reason: null,
-          timed_out: 0,
-          output_capped: 0,
-          stdout_bytes: 0,
-          stderr_bytes: 0,
-          output_truncated: null,
-          error_text: null,
-          redaction_count: 0,
-          token_est: state.tokenEst,
-          cost_est_usd: null,
-        });
+        const taskId = insertTask(
+          buildTaskRecord(
+            sourceTask,
+            {
+              invocationId: state.invocationId,
+              batchId,
+              promptSlug: state.promptSlug,
+              project: state.project,
+              tokenEst: state.tokenEst,
+              taskIndex: state.index,
+            },
+            { status: "queued", started_at: null }
+          )
+        );
         autoTag(taskId, state.promptSlug, sourceTask.sandbox);
       }
       writeBatchStatus(batchId, taskStates);
@@ -835,61 +839,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         }).then((result) => {
           const state = taskStates[i];
-          const failed = !result.success;
-          const failureReason = toFailureReason(result);
-          let redactionCount = 0;
-          let promptValue = null;
-          let outputValue = null;
-          let errorText = null;
-          const project = state.project;
-          const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
-          const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
-
-          if (failed || shouldStoreFullPrompt(project)) {
-            const redacted = redact(task.prompt.slice(0, promptCap));
-            promptValue = redacted.text;
-            redactionCount += redacted.count;
-          }
-          {
-            const redacted = redact(toStoredOutput(result));
-            outputValue = redacted.text;
-            redactionCount += redacted.count;
-          }
-          let outputFullValue = null;
-          if (shouldStoreFullOutput(project)) {
-            const redacted = redact(toStoredOutputFull(result));
-            outputFullValue = redacted.text;
-            redactionCount += redacted.count;
-          }
-          if (failed) {
-            const redacted = redact(toStoredError(result));
-            errorText = redacted.text;
-            redactionCount += redacted.count;
-          }
-
-          state.status = failed ? "failed" : "done";
+          const storedOutputs = buildStoredOutputs(result, task.prompt, state.project, promptCap);
+          state.status = result.success ? "done" : "failed";
           state.startedAt = state.startedAt ?? result.startedAt;
           state.endedAt = result.finishedAt;
-          state.durationMs = result.finishedAt - (state.startedAt ?? result.startedAt);
+          state.durationMs = result.finishedAt - state.startedAt;
 
           try {
-            updateTask(state.invocationId, {
-              started_at: state.startedAt,
-              ended_at: result.finishedAt,
-              duration_ms: state.durationMs,
-              exit_code: result.exitCode,
-              status: state.status,
-              failure_reason: failureReason,
-              timed_out: result.timedOut ? 1 : 0,
-              output_capped: result.outputCapped ? 1 : 0,
-              stdout_bytes: result.stdoutBytes,
-              stderr_bytes: result.stderrBytes,
-              prompt: promptValue,
-              output_truncated: outputValue,
-              output_full: outputFullValue,
-              error_text: errorText,
-              redaction_count: redactionCount,
-            });
+            updateTask(state.invocationId, buildFinalizeUpdate(result, storedOutputs, state.startedAt));
             writeBatchStatus(batchId, taskStates);
           } catch (error) {
             logDbError(`parallel completion update failed (task ${i + 1})`, error);
