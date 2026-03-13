@@ -50,13 +50,13 @@ server.tool(
     const usage = db.prepare(
       `SELECT tool_type, sandbox, status, COUNT(*) as count,
               AVG(duration_ms) as avg_ms, MAX(duration_ms) as max_ms, SUM(token_est) as token_sum
-       FROM tasks WHERE started_at > datetime('now', '-' || ? || ' days')
+       FROM tasks WHERE started_at > (CAST(strftime('%s','now') AS INTEGER) * 1000 - ? * 86400000)
        GROUP BY tool_type, sandbox, status`
     ).all(days);
     const failures = db.prepare(
       `SELECT project, COUNT(*) as total,
               SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed
-       FROM tasks WHERE started_at > datetime('now', '-30 days')
+       FROM tasks WHERE started_at > (CAST(strftime('%s','now') AS INTEGER) * 1000 - 30 * 86400000)
        GROUP BY project ORDER BY failed DESC LIMIT 20`
     ).all();
     const slowest_batches = db.prepare(

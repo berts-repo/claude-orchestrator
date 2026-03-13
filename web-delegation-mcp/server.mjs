@@ -13,7 +13,7 @@ import { getProvider, listProviders } from "./providers/index.mjs";
 import { createRequire } from "module";
 import fsPromises from "fs/promises";
 const _require = createRequire(import.meta.url);
-const _auditDb = (() => { try { return _require("../audit/db.js"); } catch { return null; } })();
+const _auditDb = (() => { try { return _require("../audit-mcp/db.js"); } catch { return null; } })();
 
 async function _readSessionId() {
   try {
