@@ -1,4 +1,4 @@
-# Web Search MCP Server
+# Web Delegation MCP Server
 
 MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Default search provider: Gemini API with Google Search grounding.
 
