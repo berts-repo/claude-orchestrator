@@ -14,6 +14,8 @@ Claude Code wires them together via hooks (`hooks/`) and session instructions (`
 
 ## Commands
 
+`config.json` at repo root is machine-local (gitignored) and is created from `config.example.json` by `scripts/setup.sh` if missing.
+
 ```bash
 # First-time setup (idempotent — safe to re-run)
 bash scripts/setup.sh
@@ -21,17 +23,15 @@ bash scripts/setup.sh
 # Uninstall
 bash scripts/uninstall.sh
 
-# Apply hooks and wire settings.json (always run after modifying any hooks/*.sh)
-bash scripts/sync-hooks.sh
+# Sync hooks + slash commands (always run after modifying hooks/*.sh or commands/*.md)
+bash scripts/sync.sh
 
-# Validate hooks frontmatter without applying changes
-bash scripts/sync-hooks.sh --check
+# Validate hook/command discovery without applying changes
+bash scripts/sync.sh --check
 
 # Test web-delegation-mcp
 cd web-delegation-mcp && node test-security.mjs
 
-# Install slash commands (symlinks; re-run after adding new commands)
-bash scripts/sync-commands.sh
 # Available: /audit, /direct, /report, /summarize, /session
 # /audit inspects and manages the SQLite audit DB (includes root management via add-path/list-paths)
 # /direct handles a task directly with Claude's built-in tools (bypasses MCP delegation)
@@ -81,7 +81,7 @@ Hook scripts live in `hooks/` and are wired via frontmatter headers:
 # HOOK_HELPER: true            # mark as shared helper (not registered directly)
 ```
 
-`bash scripts/sync-hooks.sh` reads these headers and writes `~/.claude/settings.json` + creates symlinks in `~/.claude/hooks/`. **Never edit `~/.claude/settings.json` hook entries manually.**
+`bash scripts/sync.sh` is the unified operator entry point; it runs hook + slash-command sync. **Never edit `~/.claude/settings.json` hook entries manually.**
 Guidance hooks follow a pre-inference design: fire on `UserPromptSubmit`, not after inference retries.
 
 Hook naming convention: `<prefix>--<purpose>.sh`
@@ -95,7 +95,7 @@ Hook naming convention: `<prefix>--<purpose>.sh`
 | File | Purpose |
 |---|---|
 | `~/.claude.json` | MCP server registration |
-| `~/.claude/settings.json` | Hooks (managed by sync-hooks.sh) |
+| `~/.claude/settings.json` | Hooks (managed via `scripts/sync.sh`) |
 | `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask) |
 | `~/.claude/CLAUDE.md` or `./CLAUDE.md` | Session instructions |
 

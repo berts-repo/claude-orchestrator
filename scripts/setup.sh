@@ -63,6 +63,16 @@ else
 fi
 
 echo
+echo "==> Ensuring config.json exists"
+if [[ ! -f "$REPO/config.json" ]]; then
+  cp "$REPO/config.example.json" "$REPO/config.json"
+  echo "Created $REPO/config.json from config.example.json."
+  echo "Edit allowedRoots for this machine, then re-run setup if needed."
+else
+  echo "$REPO/config.json already exists; skipping."
+fi
+
+echo
 echo "==> Ensuring CLAUDE.md exists"
 if [[ ! -f "$REPO/CLAUDE.md" ]]; then
   echo "$REPO/CLAUDE.md is missing. Restore it before continuing."

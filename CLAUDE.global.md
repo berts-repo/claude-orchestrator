@@ -16,7 +16,7 @@ Each call spawns an independent `codex exec` process. `codex_parallel` fans out 
 - `mcp__delegate__codex_parallel` — array of tasks (`tasks: [...]`), all run in parallel
 - `codex-reply` is **removed** — processes are ephemeral; pass full context per call
 
-Always set `cwd` to an absolute path. Allowed and blocked paths come from `delegate/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
+Always set `cwd` to an absolute path. Allowed and blocked paths come from repo-root `config.json` (machine-local, gitignored), extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. `scripts/setup.sh` auto-creates `config.json` from `config.example.json` if missing. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
 
 | Task Type | Tool | Sandbox | Approval Policy |
 |-----------|------|---------|-----------------|
@@ -47,7 +47,7 @@ Avoid embedding hundreds of lines of existing file content in a prompt.
 Hooks are registered via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). To add a new hook:
 1. Delegate hook script creation to Codex (`workspace-write`, scoped to the repo `cwd`)
 2. Codex writes the `.sh` file with the correct frontmatter headers
-3. Claude runs `bash scripts/sync-hooks.sh` to apply (updates `~/.claude/settings.json` + symlinks)
+3. Claude runs `bash scripts/sync.sh` to apply (unified hooks + slash-command sync)
 
 Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security rules.
 
@@ -55,9 +55,9 @@ Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security ru
 
 Slash commands are `.md` files in `commands/`. To add a new command:
 1. Delegate authoring to Codex (`workspace-write`, scoped to the repo `cwd`)
-2. Claude runs `bash scripts/sync-commands.sh` to install symlinks into `~/.claude/commands/`
+2. Claude runs `bash scripts/sync.sh` to install/update command symlinks in `~/.claude/commands/`
 
-`sync-commands.sh` is idempotent — safe to re-run. Supports `--check` and `--dry-run`.
+`sync.sh` is idempotent — safe to re-run. Supports `--check` and `--dry-run`.
 
 ## Blocked Subagents
 

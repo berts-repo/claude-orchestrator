@@ -52,7 +52,7 @@ const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const USER_HOME = toCanonicalPath(path.resolve(process.env.HOME ?? homedir()));
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = path.resolve(MODULE_DIR, "config.json");
+const CONFIG_PATH = path.resolve(MODULE_DIR, "../config.json");
 const DEFAULT_CONFIG = {
   allowedRoots: [USER_HOME],
   blockedPaths: ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"],

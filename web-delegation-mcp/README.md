@@ -221,10 +221,10 @@ claude mcp list
 Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). From the repo root, run:
 
 ```bash
-bash scripts/sync-hooks.sh
+bash scripts/sync.sh
 ```
 
-This updates both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` wiring. Never manually edit `~/.claude/settings.json` for hook wiring.
+This is the unified entry point and updates hook wiring plus slash-command links. Never manually edit `~/.claude/settings.json` for hook wiring.
 
 ### Step 6 — Verify End-to-End
 
@@ -470,7 +470,7 @@ cat ~/git/claude-orchestrator/web-delegation-mcp/.env
 ### Claude doesn't use search
 
 1. Check MCP registration: `claude mcp list` — `delegate-web` should appear
-2. Re-run hook sync from repo root: `bash scripts/sync-hooks.sh`
+2. Re-run unified sync from repo root: `bash scripts/sync.sh`
 3. Make sure your prompt contains a trigger phrase like "search the web"
 4. Confirm hooks are present: `ls -la ~/.claude/hooks/`
 

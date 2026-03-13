@@ -151,6 +151,8 @@ if $CHECK_ONLY; then
   exit 0
 fi
 
+disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json" 2>/dev/null || true)"
+
 # ── Step 1: Symlinks ──────────────────────────────────────────────────────────
 
 echo "--- symlinks ---"
@@ -159,6 +161,11 @@ mkdir -p "$HOOKS_LINK_DIR"
 for script in "${hook_scripts[@]}"; do
   src="$HOOKS_REPO_DIR/$script"
   dst="$HOOKS_LINK_DIR/$script"
+
+  if echo "$disabled_hooks" | grep -qxF "$(basename "$script")"; then
+    echo "  Skipping (disabled in config.json): $(basename "$script")"
+    continue
+  fi
 
   if [[ ! -f "$src" ]]; then
     echo "  WARN  $script (not found in hooks/, skipping)"

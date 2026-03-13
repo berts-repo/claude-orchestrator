@@ -1,0 +1,6 @@
+{
+  "allowedRoots": ["~/Git", "~/Projects"],
+  "blockedPaths": ["/etc", "/usr", "/bin", "/sbin", "/lib", "/System", "/Library"],
+  "hooks": { "disabled": [] },
+  "commands": { "disabled": [] }
+}

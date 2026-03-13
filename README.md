@@ -121,7 +121,7 @@ Internally, `server.js` now deduplicates shared task lifecycle logic (used by bo
 The codex-delegation server validates every delegated task `cwd` against allowed root prefixes.
 
 - Primary project-managed roots: audit DB config keys `allowed_root:<absolute-path>` (managed via `/audit add-path`, `list-paths`, `remove-path`)
-- Bootstrap defaults: `delegate/config.json` (`allowedRoots`)
+- Bootstrap defaults: repo-root `config.json` (`allowedRoots`)
 - Override/additive env var: `CODEX_POOL_ALLOWED_CWD_ROOTS` (comma-separated absolute paths, e.g. `/home/me/git,/tmp`)
 - Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
 
@@ -166,7 +166,7 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `shared--codex-log-helpers.sh` | (helper) | Delegation correlation helpers; `codex_log_correlation_key` hashes full prompt inputs to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
-To block an additional Task subagent type, add a line in `hooks/blocked-subagents.conf` and run `bash scripts/sync-hooks.sh`.
+To block an additional Task subagent type, add a line in `hooks/blocked-subagents.conf` and run `bash scripts/sync.sh`.
 
 ### Audit Logging
 
@@ -302,31 +302,29 @@ claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-delegation-
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/delegate/server.js
 claude mcp add -s user audit -- ~/git/claude-orchestrator/audit/server.js
 
-# 6. Install hooks and apply manifest wiring
-bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
+# 6. Install hooks + slash commands (unified entry point)
+bash scripts/sync.sh
 
-# 7. Install global slash commands
-mkdir -p ~/.claude/commands
-cp commands/*.md ~/.claude/commands/
-
-# 8. Verify setup
+# 7. Verify setup
 claude mcp list                # delegate-web, delegate, and audit should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/         # slash commands should be present
 
-# 9. Test web search
+# 8. Test web search
 claude "search the web for MCP protocol specification"
 ```
 
 ## Setup Details
 
-- **Slash Commands:** Copy `commands/*.md` to `~/.claude/commands/` for global availability.
+- **Slash Commands:** Run `bash scripts/sync.sh` from repo root to keep `commands/*.md` linked into `~/.claude/commands/`.
 
 ---
 
 ## Hooks Wiring
 
-Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync-hooks.sh` to apply updates (it discovers these headers and manages both `~/.claude/hooks/` symlinks and `~/.claude/settings.json` entries). Never manually edit `~/.claude/settings.json` for hook wiring.
+Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync.sh` to apply updates (it runs unified hooks + slash-command sync, including `~/.claude/hooks/` symlinks and `~/.claude/settings.json` hook entries). Never manually edit `~/.claude/settings.json` for hook wiring.
+
+`config.json` is machine-local, gitignored state at repo root. `scripts/setup.sh` auto-creates it from `config.example.json` when missing.
 
 ### Pre-approve MCP tools (optional, enables parallel delegation)
 

@@ -50,10 +50,16 @@ echo
 
 linked=0
 would=0
+disabled_cmds="$(jq -r '(.commands.disabled // [])[]' "$REPO_DIR/config.json" 2>/dev/null || true)"
 
 for file in "${md_files[@]}"; do
   name="$(basename "$file")"
   dst="$DST_DIR/$name"
+
+  if echo "$disabled_cmds" | grep -qxF "$(basename "$file")"; then
+    echo "  Skipping (disabled in config.json): $(basename "$file")"
+    continue
+  fi
 
   if $CHECK_ONLY; then
     echo "  command  $name"
