@@ -29,18 +29,18 @@ if command -v npm >/dev/null 2>&1; then
     (cd "$REPO/web-delegation-mcp" && npm install --ignore-scripts)
   fi
 
-  if [[ -f "$REPO/delegate/package-lock.json" ]]; then
+  if [[ -f "$REPO/codex-delegation-mcp/package-lock.json" ]]; then
     # better-sqlite3 relies on install scripts to provide native bindings.
-    (cd "$REPO/delegate" && npm ci)
+    (cd "$REPO/codex-delegation-mcp" && npm ci)
   else
-    (cd "$REPO/delegate" && npm install)
+    (cd "$REPO/codex-delegation-mcp" && npm install)
   fi
 
-  if [[ -f "$REPO/audit/package-lock.json" ]]; then
+  if [[ -f "$REPO/audit-mcp/package-lock.json" ]]; then
     # better-sqlite3 relies on install scripts to provide native bindings.
-    (cd "$REPO/audit" && npm ci)
+    (cd "$REPO/audit-mcp" && npm ci)
   else
-    (cd "$REPO/audit" && npm install)
+    (cd "$REPO/audit-mcp" && npm install)
   fi
 else
   echo "WARNING: npm is unavailable; skipping dependency installation."
@@ -48,16 +48,26 @@ fi
 
 echo
 echo "==> Ensuring executable bit on codex delegation server"
-chmod +x "$REPO/delegate/server.js"
-chmod +x "$REPO/audit/server.js"
+chmod +x "$REPO/codex-delegation-mcp/server.js"
+chmod +x "$REPO/audit-mcp/server.js"
 
 echo
 echo "==> Ensuring .env exists"
 if [[ ! -f "$REPO/.env" ]]; then
   cp "$REPO/.env.example" "$REPO/.env"
   echo "Created $REPO/.env from .env.example."
-  echo "Fill in GEMINI_API_KEY in $REPO/.env."
-  read -r -p "Press Enter when .env is filled in..."
+  # Prompt for GEMINI_API_KEY only when running interactively; skip in CI/pipes
+  if [[ -t 0 ]]; then
+    read -r -p "Enter GEMINI_API_KEY (or press Enter to skip): " input_key
+    if [[ -n "$input_key" ]]; then
+      sed -i '' "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=${input_key}|" "$REPO/.env"
+      echo "GEMINI_API_KEY written to $REPO/.env"
+    else
+      echo "Skipped. Edit $REPO/.env later to add GEMINI_API_KEY."
+    fi
+  else
+    echo "Non-interactive mode: skipping API key prompt. Edit $REPO/.env to add GEMINI_API_KEY."
+  fi
 else
   echo "$REPO/.env already exists; skipping."
 fi
@@ -82,6 +92,23 @@ else
 fi
 
 echo
+echo "==> Installing global session instructions"
+mkdir -p "$HOME/.claude"
+TARGET_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+SOURCE_CLAUDE_MD="$REPO/CLAUDE.global.md"
+if [[ -f "$TARGET_CLAUDE_MD" ]]; then
+  if cmp -s "$SOURCE_CLAUDE_MD" "$TARGET_CLAUDE_MD"; then
+    echo "~/.claude/CLAUDE.md already up to date; skipping."
+  else
+    cp "$SOURCE_CLAUDE_MD" "$TARGET_CLAUDE_MD"
+    echo "Updated ~/.claude/CLAUDE.md from CLAUDE.global.md."
+  fi
+else
+  cp "$SOURCE_CLAUDE_MD" "$TARGET_CLAUDE_MD"
+  echo "Installed CLAUDE.global.md -> ~/.claude/CLAUDE.md"
+fi
+
+echo
 echo "==> Ensuring MCP registrations"
 if command -v claude >/dev/null 2>&1; then
   # Resolve allowed cwd roots: .env override or parent of this repo
@@ -96,10 +123,17 @@ if command -v claude >/dev/null 2>&1; then
 
   mcp_list="$(claude mcp list 2>/dev/null || true)"
 
-  if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate-web([^[:alnum:]-]|$)'; then
-    echo "delegate-web already registered, skipping."
+  EXPECTED_WEB_PATH="$REPO/web-delegation-mcp/start.sh"
+  if echo "$mcp_list" | grep -qF "$EXPECTED_WEB_PATH"; then
+    echo "delegate-web already registered with correct path, skipping."
   else
-    claude mcp add -s user delegate-web -- "$REPO/web-delegation-mcp/start.sh"
+    # Remove stale registration (wrong path or old server name) before re-adding
+    if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate-web([^[:alnum:]-]|$)'; then
+      claude mcp remove delegate-web -s user 2>/dev/null || true
+      echo "Removed stale delegate-web registration."
+    fi
+    claude mcp add -s user delegate-web -- "$EXPECTED_WEB_PATH"
+    echo "Registered delegate-web -> $EXPECTED_WEB_PATH"
   fi
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate([^[:alnum:]-]|$)'; then
@@ -108,13 +142,13 @@ if command -v claude >/dev/null 2>&1; then
   else
     claude mcp add -s user delegate \
       --env "CODEX_POOL_ALLOWED_CWD_ROOTS=$ALLOWED_ROOTS" \
-      -- "$REPO/delegate/server.js"
+      -- "$REPO/codex-delegation-mcp/server.js"
   fi
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])audit([^[:alnum:]-]|$)'; then
     echo "audit already registered, skipping."
   else
-    claude mcp add -s user audit -- "$REPO/audit/server.js"
+    claude mcp add -s user audit -- "$REPO/audit-mcp/server.js"
   fi
 else
   echo "WARNING: 'claude' is not installed or not in PATH; skipping MCP registration/validation."

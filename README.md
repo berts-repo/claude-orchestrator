@@ -24,6 +24,71 @@ All interaction with the public internet or third-party model providers is route
 
 ---
 
+## Prerequisites
+
+- **Linux or macOS**
+- **Claude Code CLI** (`claude`) — installed and authenticated
+- **Node.js v20+** — for the Gemini MCP server
+- **jq** — JSON parsing in hooks (`sudo pacman -S jq` / `brew install jq`)
+- **sqlite3** — required by `/audit`, `/report`, and DB-backed audit hooks
+- **Codex CLI** (optional) — for code delegations (`codex login` for auth)
+
+---
+
+## Quick Start
+
+```bash
+git clone <repo-url> ~/git/claude-orchestrator
+cd ~/git/claude-orchestrator
+# setup.sh installs CLAUDE.global.md -> ~/.claude/CLAUDE.md automatically
+bash scripts/setup.sh
+```
+Re-run `bash scripts/setup.sh` at any time — it is idempotent.
+
+## Setup Details
+
+- **Slash Commands:** Run `bash scripts/sync.sh` from repo root to keep `commands/*.md` linked into `~/.claude/commands/`.
+- **Verification mode:** Run `bash scripts/sync.sh --check` to validate hook/command discovery without applying changes.
+
+---
+
+## Hooks Wiring
+
+Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync.sh` to apply updates (it runs unified hooks + slash-command sync, including `~/.claude/hooks/` symlinks and `~/.claude/settings.json` hook entries). Never manually edit `~/.claude/settings.json` for hook wiring.
+`scripts/sync-hooks.sh` and `scripts/sync-commands.sh` remain available for targeted operations, but `scripts/sync.sh` is the canonical entry point.
+
+`config.json` is machine-local, gitignored state at repo root. `scripts/setup.sh` auto-creates it from `config.example.json` when missing.
+
+### Pre-approve MCP tools (optional, enables parallel delegation)
+
+When multiple MCP calls are in a single message, rejecting the first cancels the entire batch. Pre-approve tools in `~/.claude/settings.local.json` for seamless parallel execution:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__delegate_web__search",
+      "mcp__delegate_web__fetch",
+      "mcp__delegate__codex",
+      "mcp__delegate__codex_parallel"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
+```
+
+### Config file distinction
+
+| File | Purpose |
+|---|---|
+| `~/.claude.json` | MCP server registration, user preferences |
+| `~/.claude/settings.json` | Hooks, security settings, status line |
+| `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask lists) |
+| `.mcp.json` (project root) | Project-scoped MCP servers |
+
+---
+
 ## Architecture
 
 ```
@@ -260,117 +325,9 @@ All provider-specific logic remains inside the MCP servers.
 
 ---
 
-## Prerequisites
-
-- **Linux or macOS**
-- **Claude Code CLI** (`claude`) — installed and authenticated
-- **Node.js v20+** — for the Gemini MCP server
-- **jq** — JSON parsing in hooks (`sudo pacman -S jq` / `brew install jq`)
-- **sqlite3** — required by `/audit`, `/report`, and DB-backed audit hooks
-- **Codex CLI** (optional) — for code delegations (`codex login` for auth)
-
----
-
-## Quick Start
-
-```bash
-# 1. Clone and enter the repo
-git clone <repo-url> ~/git/claude-orchestrator
-cd ~/git/claude-orchestrator
-
-# 2. Install session instructions (pick one)
-# Option A: Global — applies to all projects
-cp CLAUDE.global.md ~/.claude/CLAUDE.md
-# Option B: Project-scoped — applies only when working in this repo
-# WARNING: This overwrites the existing project CLAUDE.md
-cp CLAUDE.global.md CLAUDE.md
-
-# 3. Install dependencies for all MCP servers
-cd web-delegation-mcp && npm install
-cd ../codex-delegation-mcp && npm install  # better-sqlite3 requires native bindings (install scripts run)
-cd ../audit-mcp && npm install             # better-sqlite3 requires native bindings (install scripts run)
-cd ~/git/claude-orchestrator
-
-# 4. Configure API key
-cp web-delegation-mcp/.env.example web-delegation-mcp/.env
-chmod 600 web-delegation-mcp/.env
-# Edit web-delegation-mcp/.env and add your GEMINI_API_KEY
-
-# 5. Register MCP servers (codex + audit entry points require execute bit)
-chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
-chmod +x ~/git/claude-orchestrator/audit-mcp/server.js
-claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-delegation-mcp/start.sh
-claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
-claude mcp add -s user audit -- ~/git/claude-orchestrator/audit-mcp/server.js
-
-# 6. Install hooks + slash commands (unified entry point)
-bash scripts/sync.sh
-
-# 7. Verify setup
-claude mcp list                # delegate-web, delegate, and audit should show "Connected"
-ls -la ~/.claude/hooks/        # hook scripts should be symlinked
-ls ~/.claude/commands/         # slash commands should be present
-
-# 8. Test web search
-claude "search the web for MCP protocol specification"
-```
-
-## Setup Details
-
-- **Slash Commands:** Run `bash scripts/sync.sh` from repo root to keep `commands/*.md` linked into `~/.claude/commands/`.
-- **Verification mode:** Run `bash scripts/sync.sh --check` to validate hook/command discovery without applying changes.
-
----
-
-## Hooks Wiring
-
-Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync.sh` to apply updates (it runs unified hooks + slash-command sync, including `~/.claude/hooks/` symlinks and `~/.claude/settings.json` hook entries). Never manually edit `~/.claude/settings.json` for hook wiring.
-`scripts/sync-hooks.sh` and `scripts/sync-commands.sh` remain available for targeted operations, but `scripts/sync.sh` is the canonical entry point.
-
-`config.json` is machine-local, gitignored state at repo root. `scripts/setup.sh` auto-creates it from `config.example.json` when missing.
-
-### Pre-approve MCP tools (optional, enables parallel delegation)
-
-When multiple MCP calls are in a single message, rejecting the first cancels the entire batch. Pre-approve tools in `~/.claude/settings.local.json` for seamless parallel execution:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "mcp__delegate_web__search",
-      "mcp__delegate_web__fetch",
-      "mcp__delegate__codex",
-      "mcp__delegate__codex_parallel"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}
-```
-
-### Config file distinction
-
-| File | Purpose |
-|---|---|
-| `~/.claude.json` | MCP server registration, user preferences |
-| `~/.claude/settings.json` | Hooks, security settings, status line |
-| `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask lists) |
-| `.mcp.json` (project root) | Project-scoped MCP servers |
-
----
-
 ## Session Instructions (CLAUDE.md)
 
-Claude Code automatically loads `CLAUDE.md` files at the start of every session — no hooks or scripts required. Files are loaded from a hierarchy:
-
-| Location | Scope |
-|---|---|
-| `~/.claude/CLAUDE.md` | All projects (global) |
-| Parent directory `CLAUDE.md` files | Inherited by child projects |
-| `./CLAUDE.md` (project root) | This project only (shared via git) |
-| `./.claude/CLAUDE.md` | This project only (gitignored, personal) |
-
-This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
+This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as the session-instructions template. `bash scripts/setup.sh` installs it globally at `~/.claude/CLAUDE.md` and keeps it updated on re-run.
 
 ---
 *Last updated: 2026-03-13*

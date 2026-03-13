@@ -99,7 +99,7 @@ Hook naming convention: `<prefix>--<purpose>.sh`
 | `~/.claude.json` | MCP server registration |
 | `~/.claude/settings.json` | Hooks (managed via `scripts/sync.sh`) |
 | `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask) |
-| `~/.claude/CLAUDE.md` or `./CLAUDE.md` | Session instructions |
+| `~/.claude/CLAUDE.md` | Session instructions (installed/updated from `CLAUDE.global.md` by `scripts/setup.sh`) |
 
 ## Key Constraints
 
