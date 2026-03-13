@@ -4,6 +4,10 @@
 
 This project runs **Claude Code locally as the primary orchestrator**, delegating internet access, code generation, and external LLM API calls to controlled local MCP (Model Context Protocol) servers.
 
+A core goal is **token efficiency**: high-volume, low-reasoning tasks (code generation, test writing, refactoring, documentation) are offloaded to specialised agents (Codex, Gemini) that are often better suited to those tasks — preserving Claude's context for orchestration, reasoning, and synthesis. Delegation routinely saves 85–97% of the tokens those tasks would otherwise consume.
+
+Security is a first-class concern throughout: all external content is treated as untrusted input, sensitive file access and destructive commands are blocked by hooks, every delegation is logged to an auditable SQLite DB, and no credentials or private paths are ever exposed to external agents.
+
 Claude Code is responsible for:
 
 * Agent orchestration
