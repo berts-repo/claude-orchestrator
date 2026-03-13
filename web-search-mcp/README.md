@@ -140,9 +140,12 @@ cd ~/git/claude-orchestrator/web-search-mcp
 npm install
 ```
 
-This installs three packages:
+This installs six packages:
 - `@modelcontextprotocol/sdk` — MCP protocol over stdio
 - `@google/generative-ai` — Google Gemini API client
+- `@mozilla/readability` — web page content extraction
+- `linkedom` — lightweight DOM implementation for parsing
+- `turndown` — HTML-to-Markdown conversion
 - `zod` — runtime input validation
 
 Make the launcher executable:

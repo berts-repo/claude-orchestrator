@@ -10,6 +10,18 @@ import * as log from "./lib/logger.mjs";
 import * as cache from "./lib/cache.mjs";
 import { INJECTION_PATTERNS, sanitizeQuery, sanitizeResponse } from "./lib/sanitize.mjs";
 import { getProvider, listProviders } from "./providers/index.mjs";
+import { createRequire } from "module";
+import fsPromises from "fs/promises";
+const _require = createRequire(import.meta.url);
+const _auditDb = (() => { try { return _require("../audit-mcp/db.js"); } catch { return null; } })();
+
+async function _readSessionId() {
+  try {
+    return (await fsPromises.readFile(`${process.env.HOME}/.claude/tmp/current-session-id`, "utf8")).trim();
+  } catch {
+    return null;
+  }
+}
 
 // --- Config ---
 
@@ -145,6 +157,7 @@ server.registerTool(
 
     log.info("search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
 
+    const _searchT0 = Date.now();
     try {
       const { summary, sources, notice } = await activeProvider.search(cleanQuery, max_results);
 
@@ -180,6 +193,24 @@ server.registerTool(
 
       // Cache successful results
       cache.set(cacheKey, result);
+
+      try {
+        const _duration = Date.now() - _searchT0;
+        const _sessionId = await _readSessionId();
+        if (_auditDb?.insertTask) {
+          _auditDb.insertTask({
+            tool_type: "web-search",
+            session_id: _sessionId,
+            prompt_slug: cleanQuery.slice(0, 80),
+            status: "done",
+            started_at: Date.now() - _duration,
+            ended_at: Date.now(),
+            duration_ms: _duration,
+            stdout_bytes: output.length,
+            output_truncated: 0,
+          });
+        }
+      } catch {}
 
       return result;
     } catch (err) {
@@ -225,6 +256,7 @@ server.registerTool(
       };
     }
 
+    const _fetchT0 = Date.now();
     try {
       const { html, finalUrl } = await fetchUrl(url);
       const { document } = parseHTML(html);
@@ -254,6 +286,25 @@ server.registerTool(
         "",
         "--- END UNTRUSTED WEB CONTENT ---",
       ].join("\n");
+
+      try {
+        const _duration = Date.now() - _fetchT0;
+        const _sessionId = await _readSessionId();
+        if (_auditDb?.insertTask) {
+          _auditDb.insertTask({
+            tool_type: "web-fetch",
+            session_id: _sessionId,
+            prompt_slug: url.slice(0, 80),
+            url: finalUrl || url,
+            status: "done",
+            started_at: Date.now() - _duration,
+            ended_at: Date.now(),
+            duration_ms: _duration,
+            stdout_bytes: output.length,
+            output_truncated: 0,
+          });
+        }
+      } catch {}
 
       return { content: [{ type: "text", text: output }] };
     } catch (err) {

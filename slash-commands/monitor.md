@@ -1,11 +1,15 @@
 Produce a monitoring report for this orchestration setup.
 
-Delegate to Codex with:
+Execution mode:
+- Preferred: if `mcp__audit__*` tools are available, generate the report directly from audit MCP data (plus security events log), and do not delegate report generation to Codex.
+- Fallback: if audit MCP is unavailable, delegate to Codex using the prompt below.
+
+Fallback Codex settings:
 - sandbox: read-only
 - approval_policy: never
 - cwd: current working directory
 
-Use this Codex prompt:
+Use this fallback Codex prompt:
 
 ---
 Claude will read the following two log files directly (do not ask Codex to read `~/.claude/*`):
@@ -57,15 +61,12 @@ One-paragraph assessment of the overall health of the orchestration setup.
 Format the report with markdown tables where appropriate. Keep it concise — this is a dashboard, not a deep dive.
 ---
 
-After Codex returns, display the report verbatim.
+If using the fallback Codex path, display Codex's report verbatim.
 
 ### Audit Activity
-Claude (not Codex) should query `~/.claude/audit.db` for recent activity:
-- Last 10 tasks: `project`, `prompt_slug`, `status`, `duration_ms`, `started_at`
-- Any currently running tasks (`status = 'running'`)
-- Failure rate summary by project (last 7 days)
+If using the preferred audit-MCP path, Claude (not Codex) should call `mcp__audit__get_tasks` and `mcp__audit__get_report` for recent activity:
+- Last 10 tasks: call `mcp__audit__get_tasks` with `limit=10`
+- Any currently running tasks: call `mcp__audit__get_tasks` with `keyword=running` or check `running` field in `mcp__audit__get_report`
+- Failure rate summary by project (last 7 days): call `mcp__audit__get_report` with `days=7` and use the `failures` field
 
-Use:
-- `sqlite3 ~/.claude/audit.db "SELECT ..."`
-
-If DB does not exist, skip this section silently.
+If audit MCP is unavailable, skip this section and use the fallback Codex JSONL path above.

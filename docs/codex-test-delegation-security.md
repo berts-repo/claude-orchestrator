@@ -87,7 +87,7 @@ Test writing and test running must be delegated as separate phases because they 
 
 For a portable project that cannot assume pre-installed dependencies:
 
-1. Add `scripts/bootstrap.sh` to create `.venv` and install dependencies (run once by the user).
+1. Run `bash scripts/setup.sh` once to install project dependencies and baseline tooling.
 2. Delegate test writing to Codex using `workspace-write` + `on-failure`.
 3. Delegate test running to Codex using `.venv/bin/pytest` with `read-only` + `never` and no runtime network access.
 4. Document this flow in `CLAUDE.md` so orchestration behavior is explicit and repeatable.

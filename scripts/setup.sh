@@ -35,6 +35,13 @@ if command -v npm >/dev/null 2>&1; then
   else
     (cd "$REPO/codex-delegation-mcp" && npm install)
   fi
+
+  if [[ -f "$REPO/audit-mcp/package-lock.json" ]]; then
+    # better-sqlite3 relies on install scripts to provide native bindings.
+    (cd "$REPO/audit-mcp" && npm ci)
+  else
+    (cd "$REPO/audit-mcp" && npm install)
+  fi
 else
   echo "WARNING: npm is unavailable; skipping dependency installation."
 fi
@@ -42,6 +49,7 @@ fi
 echo
 echo "==> Ensuring executable bit on codex delegation server"
 chmod +x "$REPO/codex-delegation-mcp/server.js"
+chmod +x "$REPO/audit-mcp/server.js"
 
 echo
 echo "==> Ensuring .env exists"
@@ -93,6 +101,12 @@ if command -v claude >/dev/null 2>&1; then
       --env "CODEX_POOL_ALLOWED_CWD_ROOTS=$ALLOWED_ROOTS" \
       -- "$REPO/codex-delegation-mcp/server.js"
   fi
+
+  if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])audit([^[:alnum:]-]|$)'; then
+    echo "audit already registered, skipping."
+  else
+    claude mcp add -s user audit -- "$REPO/audit-mcp/server.js"
+  fi
 else
   echo "WARNING: 'claude' is not installed or not in PATH; skipping MCP registration/validation."
 fi
@@ -120,6 +134,12 @@ if command -v claude >/dev/null 2>&1; then
     echo "PASS: delegate-web is registered."
   else
     echo "FAIL: delegate-web is not registered."
+  fi
+
+  if echo "$final_mcp_list" | grep -Eq '(^|[^[:alnum:]-])audit([^[:alnum:]-]|$)'; then
+    echo "PASS: audit is registered."
+  else
+    echo "FAIL: audit is not registered."
   fi
 else
   echo "SKIP: claude CLI not found; cannot validate MCP registrations."

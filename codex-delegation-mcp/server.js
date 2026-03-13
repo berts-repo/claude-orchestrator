@@ -43,7 +43,7 @@ import {
   upsertSession,
   writeBatchStatus,
   writeCurrentBatchId,
-} from "./db.js";
+} from "../audit-mcp/db.js";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min

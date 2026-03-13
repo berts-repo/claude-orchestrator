@@ -73,15 +73,9 @@ Keep output under 60 lines total.
 
 After Codex returns:
 - Display the snapshot under "## Session Snapshot"
-- Claude (not Codex) queries `~/.claude/audit.db` directly with:
-  ```sql
-  SELECT prompt_slug, tool_type, sandbox, status, failure_reason,
-         duration_ms, token_est, started_at
-  FROM tasks
-  WHERE project = '<basename of cwd>'
-  ORDER BY started_at DESC
-  LIMIT 10
-  ```
+- Claude (not Codex) calls `mcp__audit__get_tasks` with:
+  - `project = <basename of cwd>`
+  - `limit = 10`
 - Append this section to the snapshot:
   `## Recent Delegation Activity`
   [markdown table with columns: timestamp | type | sandbox | status | duration | prompt_slug]

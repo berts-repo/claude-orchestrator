@@ -35,6 +35,8 @@ Claude Code (local orchestrator)
    +---> delegate-web MCP Server (stdio) --- Web API (Gemini/Brave/…)
    |
    +---> codex-delegation MCP Server (stdio) -- codex exec subprocesses (sandboxed)
+   |
+   +---> audit MCP Server (stdio) ----------- SQLite audit DB (~/.claude/audit.db)
 ```
 
 Claude Code spawns each MCP server as a child process and communicates over stdin/stdout pipes.
@@ -71,6 +73,29 @@ Internet access is triggered by explicit user intent:
 
 Returned data is retrieval-only: short summaries, source URLs, brief excerpts. Raw HTML is not returned.
 
+### audit (Audit DB MCP Server)
+
+| | |
+|---|---|
+| Purpose | SQLite audit DB owner; exposes query/config tools for the audit log |
+| Auth | None (local stdio) |
+| Transport | stdio |
+| Scope | Global (user) |
+| Status | Stable |
+| Location | **[audit-mcp/](audit-mcp/)** |
+
+Tools exposed:
+
+* `get_tasks` — list recent audit tasks; filter by `tool_type`, `keyword`, `project`, or `cwd`
+* `get_report` — pre-built analytics: usage breakdown, project failure rates, slowest batches, running tasks
+* `get_status` — DB health check: config values, row counts per table, file size
+* `set_config` — write an allowlisted config key to the DB (retention periods, full-output storage flags)
+* `run_query` — run a raw `SELECT` against the audit DB (only `SELECT` statements permitted)
+
+The audit server is the DB owner. It initialises the schema, runs retention cleanup at startup, and is the only server that exposes the DB to Claude via MCP tools. The codex-delegation server writes to the same `~/.claude/audit.db` file via the shared `db.js` module.
+
+---
+
 ### codex-delegation (Codex Subprocess Dispatcher)
 
 | | |
@@ -95,7 +120,7 @@ The codex-delegation server validates every delegated task `cwd` against allowed
 
 - Env var: `CODEX_POOL_ALLOWED_CWD_ROOTS`
 - Format: comma-separated absolute paths (for example: `/home/me/git,/tmp`)
-- Default behavior: if unset, allowed roots default to `$HOME`
+- Default behavior: if unset, allowed roots come from `config.json` (`allowedRoots`)
 - Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
 
 Common failure message:
@@ -137,7 +162,7 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
 | `codex--log-delegation-start.sh` | PreToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Records start time for duration tracking |
 | `codex--log-delegation.sh` | PostToolUse (mcp__delegate__codex, mcp__delegate__codex_parallel, mcp__delegate_web__search, mcp__delegate_web__fetch) | Logs delegation summaries to `~/.claude/logs/delegations.jsonl` |
-| `web--log-audit.sh` | PostToolUse (`mcp__delegate_web__fetch\|mcp__delegate_web__search`) | Writes web search/fetch audit rows into `~/.claude/audit.db` (`tasks` table) |
+| `web--log-start.sh` | PreToolUse (`mcp__delegate_web__*`) | Records web delegation start markers used for duration tracking in delegation logs |
 | `shared--codex-log-helpers.sh` | (helper) | Codex logging helpers; `codex_log_correlation_key` hashes the full prompt to avoid parallel-call collisions |
 | `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
 
@@ -149,13 +174,13 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 #### Audit DB — `~/.claude/audit.db`
 
-Primary audit storage is SQLite at `~/.claude/audit.db` (see `codex-delegation-mcp/db.js`).
+Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in the shared `db.js` module (used by both `audit-mcp/` and `codex-delegation-mcp/`). The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `run_query`).
 
 - Stores task/delegation records for Codex and web calls
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
 - Stores `output_truncated` for all tasks and `output_full` when full-output storage is enabled
-- Use `/audit` for direct SQLite queries/config updates
+- Use `/audit` for direct SQLite queries/config updates; the `/audit` slash command calls `mcp__audit__*` tools under the hood
 
 **Summary index** — `~/.claude/logs/delegations.jsonl`
 - Short identifying summary (first line of prompt, truncated to 80 chars)
@@ -270,9 +295,10 @@ cp CLAUDE.global.md ~/.claude/CLAUDE.md
 # WARNING: This overwrites the existing project CLAUDE.md
 cp CLAUDE.global.md CLAUDE.md
 
-# 3. Install dependencies for both MCP servers
+# 3. Install dependencies for all MCP servers
 cd web-search-mcp && npm install
-cd ../codex-delegation-mcp && npm install
+cd ../codex-delegation-mcp && npm install  # better-sqlite3 requires native bindings (install scripts run)
+cd ../audit-mcp && npm install             # better-sqlite3 requires native bindings (install scripts run)
 cd ~/git/claude-orchestrator
 
 # 4. Configure API key
@@ -280,10 +306,12 @@ cp web-search-mcp/.env.example web-search-mcp/.env
 chmod 600 web-search-mcp/.env
 # Edit web-search-mcp/.env and add your GEMINI_API_KEY
 
-# 5. Register MCP servers
-chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js  # needs execute bit (shebang-based)
+# 5. Register MCP servers (all three require execute bit — shebang-based entry points)
+chmod +x ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+chmod +x ~/git/claude-orchestrator/audit-mcp/server.js
 claude mcp add -s user delegate-web -- ~/git/claude-orchestrator/web-search-mcp/start.sh
 claude mcp add -s user delegate -- ~/git/claude-orchestrator/codex-delegation-mcp/server.js
+claude mcp add -s user audit -- ~/git/claude-orchestrator/audit-mcp/server.js
 
 # 6. Install hooks and apply manifest wiring
 bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.claude/hooks/ symlinks and ~/.claude/settings.json
@@ -293,7 +321,7 @@ mkdir -p ~/.claude/commands
 cp slash-commands/*.md ~/.claude/commands/
 
 # 8. Verify setup
-claude mcp list                # delegate-web and delegate should show "Connected"
+claude mcp list                # delegate-web, delegate, and audit should show "Connected"
 ls -la ~/.claude/hooks/        # hook scripts should be symlinked
 ls ~/.claude/commands/         # slash commands should be present
 
@@ -355,4 +383,4 @@ Claude Code automatically loads `CLAUDE.md` files at the start of every session 
 This repo ships [`CLAUDE.global.md`](CLAUDE.global.md) as a template. Copy it to one of the locations above to activate (see Quick Start step 2). The template declares MCP tool usage rules, Codex delegation patterns, and the project structure.
 
 ---
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-13*

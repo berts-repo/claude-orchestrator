@@ -41,7 +41,7 @@ codex-delegation-mcp/
 ├── server.js        # MCP server — registers codex and codex_parallel tools
 ├── db.js            # SQLite audit DB schema, retention, and task write helpers
 ├── config.json      # Allowed/blocked cwd roots
-├── package.json     # Dependencies: @modelcontextprotocol/sdk, better-sqlite3, zod
+├── package.json     # Dependencies: @modelcontextprotocol/sdk, zod
 └── node_modules/    # Installed by npm install
 ```
 
@@ -255,7 +255,7 @@ Parallel batch: 3 tasks, total wall time 12340ms
 | `OPENAI_API_KEY` | — | OpenAI API key (checked before `~/.codex/auth.json`) |
 | `CODEX_POOL_TIMEOUT_MS` | `300000` (5 min) | Subprocess timeout in milliseconds |
 | `CODEX_BIN` | `codex` | Path to the Codex CLI binary |
-| `CODEX_POOL_ALLOWED_CWD_ROOTS` | from `config.json` (+ `$HOME` fallback) | Comma-separated absolute cwd roots allowed for delegated tasks |
+| `CODEX_POOL_ALLOWED_CWD_ROOTS` | from `config.json` (`allowedRoots`) | Comma-separated absolute cwd roots allowed for delegated tasks |
 | `CODEX_ALLOW_DANGER_SANDBOX` | `0` | Set to `1` to permit `sandbox: "danger-full-access"` |
 
 ---

@@ -1,5 +1,7 @@
 # Audit DB + Live Overlay Plan
 
+> Historical planning document: this reflects a proposed migration path and is not the current source of truth for runtime behavior.
+
 ## Goal
 Replace existing JSONL hook-based logging with a SQLite audit DB that provides real-time
 task visibility, cross-session querying, and project history — while keeping stored data
@@ -10,12 +12,12 @@ minimal and safe by default.
 ### Components
 1. **SQLite DB** at `~/.claude/audit.db` (`0600`) — cross-session audit trail
 2. **Per-batch JSON status files** at `~/.claude/tmp/{random}.json` (`0700` dir) — live monitoring source
-3. **Watcher script** `scripts/watch-tasks.sh` — renders live status table
+3. ~~**Watcher script** `scripts/watch-tasks.sh` — renders live status table~~
 4. **Pre/Post hooks** — auto-launches/kills overlay window on delegate calls
 5. **PostToolUse hook** for web delegate — logs Gemini/web calls to same DB
 6. **`/audit` skill** — configure retention, per-project prompt storage, and query the DB
 7. **Skills updated** — /monitor and /summarize query the DB; /log-cleanup retired (DB handles retention)
-8. **JSONL logs retired** once DB is stable (existing hooks removed)
+8. **JSONL logs remain active** alongside DB logging for compatibility
 
 ### Data Flow
 ```
@@ -208,7 +210,7 @@ ORDER BY started_at DESC;
 
 - Phase 1: DB writes alongside existing JSONL (dual-write)
 - Phase 2: Update /monitor, /summarize, /log-cleanup to read from DB
-- Phase 3: Remove JSONL hooks once DB is confirmed stable
+- Phase 3: Keep JSONL hooks active for compatibility while DB-backed workflows mature
 - Fix `/session` log filename typo: `delegation.jsonl` → `delegations.jsonl` during migration
 
 ## Implementation Order
@@ -221,7 +223,7 @@ ORDER BY started_at DESC;
 6. Retention/cleanup on startup
 7. `/audit` skill (set-project, list-projects, set, status subcommands)
 8. Update /monitor and /summarize to query DB; retire /log-cleanup
-9. JSONL hook retirement + migration
+9. JSONL + DB compatibility and migration follow-up
 
 ## Key Decisions
 
