@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Shared logging helpers for Claude Orchestrator hooks.
+# Shared helpers for Claude Orchestrator hooks.
 # Source this file — do not execute directly.
-# Provides: SESSION_ID, LOG_DIR, ensure_dirs()
+# Provides: SESSION_ID, ensure_dirs()
 # HOOK_HELPER: true
 
 # Guard against double-sourcing
 [[ -n "${_LOG_HELPERS_LOADED:-}" ]] && return 0
 _LOG_HELPERS_LOADED=1
-
-LOG_DIR="${HOME}/.claude/logs"
 
 # Session ID: short hash of PPID + today's date.
 # Groups all events within one Claude Code process tree per day.
@@ -19,7 +17,7 @@ else
 fi
 export SESSION_ID
 
-# ensure_dirs — create standard log directories
+# ensure_dirs — create ~/.claude if it does not exist
 ensure_dirs() {
   mkdir -p "${HOME}/.claude"
 }

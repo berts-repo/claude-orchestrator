@@ -216,12 +216,13 @@ Guidance-oriented hooks are designed to fire before inference (`UserPromptSubmit
 | `security--guard-sensitive-reads.sh` | PreToolUse (Read, Bash, Glob, Edit, Write) | Blocks reads of sensitive files unconditionally |
 | `security--protect-sensitive-writes.sh` | PreToolUse (Bash, Edit, Write) | Blocks direct writes/edits/deletes against `.env*` and `.ssh` paths (except `.env.example`/`.env.template`/`.env.sample`) |
 | `security--block-destructive-commands.sh` | PreToolUse (Bash) | Blocks rm -rf, git push --force, drop table, and other destructive commands |
-| `security--log-security-event.sh` | (helper) | Logs denied actions to `~/.claude/logs/security-events.jsonl` (called by PreToolUse hooks) |
+| `security--log-security-event.sh` | (helper) | Logs denied actions to the `security_events` table in `~/.claude/audit.db` (called by PreToolUse hooks) |
 | `codex--delegate-task-hint.sh` | UserPromptSubmit | Detects delegation-worthy tasks (implement/refactor/test/audit) and injects Codex delegation guidance before inference |
 | `codex--block-subagents.sh` | PreToolUse (Task) | Blocks configured Task subagent types from `hooks/blocked-subagents.conf` and returns sandbox hints for Codex delegation |
-| `web--log-start.sh` | PreToolUse (`mcp__delegate_web__*`) | Records web delegation start markers used for duration tracking |
+| `web--log-start.sh` | PreToolUse (`mcp__delegate_web__*`) | Inserts `started` web task records in `~/.claude/audit.db` before web MCP calls |
+| `web--log-end.sh` | PostToolUse (`mcp__delegate_web__*`) | Finalizes web task records (`completed`/`error`, `duration_ms`) in `~/.claude/audit.db` |
 | `shared--codex-log-helpers.sh` | (helper) | Delegation correlation helpers; `codex_log_correlation_key` hashes full prompt inputs to avoid parallel-call collisions |
-| `shared--log-helpers.sh` | (helper) | Shared logging functions: `log_json()`, `rotate_jsonl()`, session ID generation |
+| `shared--log-helpers.sh` | (helper) | Shared session helpers (session ID generation and common directory setup) |
 
 To block an additional Task subagent type, add a line in `hooks/blocked-subagents.conf` and run `bash scripts/sync.sh`.
 
@@ -234,22 +235,13 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in `audit-mcp/db.js`. The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
 
 - Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing)
+- Stores web MCP task records in `web_tasks` (`tool_name`, prompt/hash, status, timestamps, duration, error text)
+- Stores denied-action security records in `security_events` (hook/tool, severity, pattern, command preview, cwd)
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
 - Stores `output_truncated` for all tasks and `output_full` when full-output storage is enabled
 - Use `/audit` for direct SQLite queries/config updates; the `/audit` slash command calls `mcp__audit__*` tools under the hood
-- Web delegation task records are not yet written to the audit DB
-
-**Duration tracking** — `~/.claude/logs/.pending/`
-- PreToolUse hooks record start time for web delegation duration tracking
-- Pending markers are cleaned up automatically on completion
-
-**Security events** — `~/.claude/logs/security-events.jsonl`
-- Logged automatically when any PreToolUse hook denies an action
-- Fields: timestamp, level, session_id, hook, tool, action, severity (low/medium/high/critical), pattern_matched, command_preview, cwd
-- Severity mapping: destructive commands = high, network/sensitive reads = medium, blocked subagents = low
-- FIFO rotation keeps the last 200 entries
-- Run `/report` for a dashboard view of audit DB metrics plus security events
+- Run `/report` for a dashboard view of audit DB metrics across Codex tasks, web tasks, and security events
 ### Slash Commands
 
 Global slash commands are installed to `~/.claude/commands/`:
