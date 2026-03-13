@@ -20,6 +20,9 @@ let statements = null;
 
 function initSchema(conn) {
   conn.exec(`
+    PRAGMA journal_mode=WAL;
+    PRAGMA synchronous=NORMAL;
+
     CREATE TABLE IF NOT EXISTS sessions (
       id           TEXT PRIMARY KEY,
       started_at   INTEGER,
@@ -91,6 +94,44 @@ function initSchema(conn) {
       value      TEXT,
       updated_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS security_events (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id      TEXT,
+      timestamp_ms    INTEGER NOT NULL,
+      level           TEXT NOT NULL,
+      hook            TEXT NOT NULL,
+      tool            TEXT NOT NULL,
+      action          TEXT NOT NULL DEFAULT 'deny',
+      severity        TEXT NOT NULL,
+      pattern_matched TEXT,
+      command_preview TEXT,
+      cwd             TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_security_events_ts      ON security_events(timestamp_ms);
+    CREATE INDEX IF NOT EXISTS idx_security_events_session ON security_events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_security_events_hook    ON security_events(hook);
+    CREATE INDEX IF NOT EXISTS idx_security_events_sev     ON security_events(severity);
+
+    CREATE TABLE IF NOT EXISTS web_tasks (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id      TEXT,
+      invocation_key  TEXT NOT NULL,
+      tool_name       TEXT NOT NULL,
+      prompt          TEXT,
+      prompt_hash     TEXT,
+      status          TEXT NOT NULL DEFAULT 'started',
+      started_at      INTEGER NOT NULL,
+      ended_at        INTEGER,
+      duration_ms     INTEGER,
+      error_text      TEXT,
+      cwd             TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_web_tasks_started    ON web_tasks(started_at);
+    CREATE INDEX IF NOT EXISTS idx_web_tasks_session    ON web_tasks(session_id);
+    CREATE INDEX IF NOT EXISTS idx_web_tasks_status     ON web_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_web_tasks_tool       ON web_tasks(tool_name);
+    CREATE INDEX IF NOT EXISTS idx_web_tasks_inv_key    ON web_tasks(invocation_key);
 
     CREATE INDEX IF NOT EXISTS idx_tasks_project    ON tasks(project);
     CREATE INDEX IF NOT EXISTS idx_tasks_started    ON tasks(started_at);
@@ -251,6 +292,14 @@ export function runRetentionCleanup() {
       DELETE FROM tasks
       WHERE started_at < ?
     `);
+    const deleteOldSecurityEventsStmt = db.prepare(`
+      DELETE FROM security_events
+      WHERE timestamp_ms < ?
+    `);
+    const deleteOldWebTasksStmt = db.prepare(`
+      DELETE FROM web_tasks
+      WHERE started_at < ?
+    `);
     const deleteOldBatchesStmt = db.prepare(`
       DELETE FROM batches
       WHERE ended_at < ?
@@ -279,6 +328,8 @@ export function runRetentionCleanup() {
     const nulledOutputs = nullOutputStmt.run(outputCutoff).changes;
     const nulledFullOutputs = nullFullOutputStmt.run(outputFullCutoff).changes;
     let deletedTasks = deleteOldTasksStmt.run(rowCutoff).changes;
+    deleteOldSecurityEventsStmt.run(rowCutoff);
+    deleteOldWebTasksStmt.run(rowCutoff);
     deleteOldBatchesStmt.run(rowCutoff);
     deleteOldSessionsStmt.run(rowCutoff);
 

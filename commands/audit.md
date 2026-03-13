@@ -6,7 +6,7 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `set <key> <value>`
 - `status`
 - `report [days]`
-- `log [N] [--list] [--codex|--web] [keyword]`
+- `log [N] [--list] [--codex|--web|--security] [keyword]`
 - `query <sql>`
 - `add-path <path>`
 - `list-paths`
@@ -47,7 +47,7 @@ For `set <key> <value>`:
 
 For `status`:
 - Call `mcp__audit__get_status` (no params).
-- Display config values, row counts per table, and DB file size.
+- Display config values, row counts per table (including `security_events` and `web_tasks`), and DB file size.
 - Include an "Example Queries" section with helpful hints:
   - Project history this week: `get_tasks` with `project=<name>`
   - Failure rate by project: `get_report` with default days
@@ -60,16 +60,32 @@ For `report [days]`:
 - Call `mcp__audit__get_report` with `days`.
 - Display sections from the response: `usage`, `failures`, `slowest_batches`, and `running`.
 
-For `log [N] [--list] [--codex|--web] [keyword]`:
+For `log [N] [--list] [--codex|--web|--security] [keyword]`:
 - Defaults: `N = 10`, no type filter, no keyword filter, full mode (not `--list`).
 - Parse args in this order:
   - First positional integer → `N` (limit)
   - `--codex` → `tool_type = "codex"`
-  - `--web` → run two calls: `tool_type = "web-search"` and `tool_type = "web-fetch"`, combine results
+  - `--web` → query `web_tasks` via `mcp__audit__run_query`:
+    `SELECT id, tool_name, status, prompt, datetime(started_at/1000,'unixepoch') as started, duration_ms
+     FROM web_tasks
+     ORDER BY started_at DESC
+     LIMIT <N>`
+  - `--security` → query `security_events` via `mcp__audit__run_query`:
+    `SELECT id, datetime(timestamp_ms/1000,'unixepoch') as ts, hook, tool, severity, pattern_matched, command_preview
+     FROM security_events
+     ORDER BY timestamp_ms DESC
+     LIMIT <N>`
   - `--list` → list mode
   - First non-flag, non-integer positional token → `keyword`
 - Call `mcp__audit__get_tasks` with appropriate `limit`, `tool_type`, `keyword` params.
-- For `--web`, call twice and concatenate results.
+- For `--web` and `--security`, use the SQL query paths above instead of `get_tasks`.
+
+For `log --security [N]`:
+- Query `security_events` via `mcp__audit__run_query`:
+  `SELECT id, datetime(timestamp_ms/1000,'unixepoch') as ts, hook, tool, severity, pattern_matched, command_preview
+   FROM security_events
+   ORDER BY timestamp_ms DESC
+   LIMIT <N>`
 
 - Full mode output: for each row render:
   - Header: `[N] <type> · <sandbox> · <duration>ms · <timestamp> · <cwd>`

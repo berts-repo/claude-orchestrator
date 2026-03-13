@@ -74,6 +74,24 @@ else
 fi
 
 echo
+if [[ -f "$HOME/.claude/logs/security-events.jsonl" ]]; then
+  read -r -p "Remove ~/.claude/logs/security-events.jsonl (replaced by audit DB)? [y/N] " remove_jsonl
+  if [[ "$remove_jsonl" =~ ^[Yy]$ ]]; then
+    rm -f "$HOME/.claude/logs/security-events.jsonl"
+    echo "Removed security-events.jsonl"
+  fi
+fi
+
+echo
+if [[ -d "$HOME/.claude/logs/.pending" ]]; then
+  read -r -p "Remove ~/.claude/logs/.pending/ (replaced by audit DB)? [y/N] " remove_pending
+  if [[ "$remove_pending" =~ ^[Yy]$ ]]; then
+    rm -rf "$HOME/.claude/logs/.pending"
+    echo "Removed .pending/ directory"
+  fi
+fi
+
+echo
 read -r -p "Remove .env? [y/N] " remove_env
 if [[ "$remove_env" =~ ^[Yy]$ ]]; then
   if [[ -f "$REPO/.env" ]]; then

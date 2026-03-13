@@ -79,7 +79,7 @@ server.tool(
   {},
   async () => {
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
-    const tables = ["sessions", "batches", "tasks", "task_tags", "tags", "config"];
+    const tables = ["sessions", "batches", "tasks", "task_tags", "tags", "config", "security_events", "web_tasks"];
     const counts = {};
     for (const t of tables) {
       try { counts[t] = db.prepare(`SELECT COUNT(*) as n FROM ${t}`).get().n; }

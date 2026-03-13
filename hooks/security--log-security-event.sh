@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Security event logger — called by PreToolUse hooks when they deny an action.
 # NOT a hook itself. Invoked by existing hooks before they output the deny JSON.
-# Writes to ~/.claude/logs/security-events.jsonl with FIFO rotation.
+# Writes to ~/.claude/audit.db security_events table.
 # HOOK_HELPER: true
 set -euo pipefail
 
@@ -9,8 +9,8 @@ REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 source "$SCRIPT_DIR/shared--log-helpers.sh"
 
-MAX_ENTRIES=200
-LOG_FILE="${LOG_DIR}/security-events.jsonl"
+command -v sqlite3 >/dev/null 2>&1 || exit 0
+[[ -f "${HOME}/.claude/audit.db" ]] || exit 0
 
 # Usage: log-security-event.sh <hook_name> <tool_name> <pattern_matched> <command_preview> [severity]
 # All args are optional — missing args default to "unknown"
@@ -25,8 +25,6 @@ if [[ ${#command_preview} -gt 80 ]]; then
   command_preview="${command_preview:0:77}..."
 fi
 
-ensure_dirs
-
 # Map severity to log level
 case "$severity" in
   critical|high) log_level="error" ;;
@@ -35,19 +33,17 @@ case "$severity" in
   *)             log_level="warn" ;;
 esac
 
-# Build and append log entry
-log_entry=$(log_json "$log_level" "security" "security_deny" \
-  --arg hook "$hook_name" \
-  --arg tool "$tool_name" \
-  --arg action "deny" \
-  --arg severity "$severity" \
-  --arg pattern_matched "$pattern_matched" \
-  --arg command_preview "$command_preview" \
-  --arg cwd "$(pwd)")
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
 
-echo "$log_entry" >> "$LOG_FILE"
+if [[ "$(uname)" == "Darwin" ]]; then
+  epoch_ms="$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || date +%s000)"
+else
+  epoch_ms="$(date +%s%3N 2>/dev/null || date +%s000)"
+fi
 
-# FIFO rotation: keep last MAX_ENTRIES
-rotate_jsonl "$LOG_FILE" "$MAX_ENTRIES"
+DB="${HOME}/.claude/audit.db"
+sqlite3 "$DB" "INSERT INTO security_events (session_id, timestamp_ms, level, hook, tool, action, severity, pattern_matched, command_preview, cwd) VALUES ('$(sql_escape "$SESSION_ID")', ${epoch_ms}, '$(sql_escape "$log_level")', '$(sql_escape "$hook_name")', '$(sql_escape "$tool_name")', 'deny', '$(sql_escape "$severity")', '$(sql_escape "$pattern_matched")', '$(sql_escape "$command_preview")', '$(sql_escape "$(pwd)")');"
 
 exit 0

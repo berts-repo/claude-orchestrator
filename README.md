@@ -47,15 +47,7 @@ Re-run `bash scripts/setup.sh` at any time — it is idempotent.
 
 ## Setup Details
 
-- **Slash Commands:** Run `bash scripts/sync.sh` from repo root to keep `commands/*.md` linked into `~/.claude/commands/`.
-- **Verification mode:** Run `bash scripts/sync.sh --check` to validate hook/command discovery without applying changes.
-
----
-
-## Hooks Wiring
-
-Hook registration is managed via frontmatter headers in each `hooks/*.sh` file (`# HOOK_EVENT:`, `# HOOK_TIMEOUT:`, optional `# HOOK_MATCHER:`). Run `bash scripts/sync.sh` to apply updates (it runs unified hooks + slash-command sync, including `~/.claude/hooks/` symlinks and `~/.claude/settings.json` hook entries). Never manually edit `~/.claude/settings.json` for hook wiring.
-`scripts/sync-hooks.sh` and `scripts/sync-commands.sh` remain available for targeted operations, but `scripts/sync.sh` is the canonical entry point.
+`scripts/setup.sh` handles everything on first run and is safe to re-run. Only run `bash scripts/sync.sh` manually if you modify hooks or slash commands after the initial install — it re-syncs `~/.claude/hooks/` symlinks, `~/.claude/settings.json` hook entries, and `~/.claude/commands/`. Use `bash scripts/sync.sh --check` to validate without applying changes.
 
 `config.json` is machine-local, gitignored state at repo root. `scripts/setup.sh` auto-creates it from `config.example.json` when missing.
 
