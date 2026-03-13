@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-commands.sh — Install slash commands from slash-commands/ into ~/.claude/commands/
+# sync-commands.sh — Install slash commands from skills/ into ~/.claude/commands/
 #
 # Usage:
 #   bash scripts/sync-commands.sh [--dry-run] [--check]
@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SRC_DIR="$REPO_DIR/slash-commands"
+SRC_DIR="$REPO_DIR/skills"
 DST_DIR="$HOME/.claude/commands"
 DRY_RUN=false
 CHECK_ONLY=false

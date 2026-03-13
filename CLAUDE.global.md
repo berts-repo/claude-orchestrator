@@ -16,7 +16,7 @@ Each call spawns an independent `codex exec` process. `codex_parallel` fans out 
 - `mcp__delegate__codex_parallel` — array of tasks (`tasks: [...]`), all run in parallel
 - `codex-reply` is **removed** — processes are ephemeral; pass full context per call
 
-Always set `cwd` to an absolute path. Allowed and blocked paths come from `codex-delegation-mcp/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-roots` and `/audit add-root <absolute-path>` to manage env roots.
+Always set `cwd` to an absolute path. Allowed and blocked paths come from `codex-delegation-mcp/config.json`, extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
 
 | Task Type | Tool | Sandbox | Approval Policy |
 |-----------|------|---------|-----------------|
@@ -53,7 +53,7 @@ Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security ru
 
 ## Adding Slash Commands
 
-Slash commands are `.md` files in `slash-commands/`. To add a new command:
+Slash commands are `.md` files in `skills/`. To add a new command:
 1. Delegate authoring to Codex (`workspace-write`, scoped to the repo `cwd`)
 2. Claude runs `bash scripts/sync-commands.sh` to install symlinks into `~/.claude/commands/`
 

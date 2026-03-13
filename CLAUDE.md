@@ -33,7 +33,7 @@ cd web-search-mcp && node test-security.mjs
 # Install slash commands (symlinks; re-run after adding new commands)
 bash scripts/sync-commands.sh
 # Available: /audit, /clauded, /report, /summarize, /session
-# /audit inspects and manages the SQLite audit DB (includes root management via add-root/list-roots)
+# /audit inspects and manages the SQLite audit DB (includes root management via add-path/list-paths)
 # /clauded handles a task directly with Claude's built-in tools (bypasses MCP delegation)
 #   --allow codex  permit Codex MCP  |  --allow web  permit Web MCP  |  --allow all  permit both
 # /session writes .SESSION.md and /summarize --save/--refresh writes .SUMMARY.md (both gitignored)
@@ -68,7 +68,7 @@ For the web server: Claude MCP registration uses `delegate-web`, while hook/tool
 - Timeout: 5 min default (`CODEX_POOL_TIMEOUT_MS`); output capped at 2 MB
 - API key: reads `OPENAI_API_KEY` env or `~/.codex/auth.json`
 - `CODEX_POOL_ALLOWED_CWD_ROOTS` env var adds temporary override roots for the current process
-- `/audit add-root <absolute-path>` / `remove-root` / `list-roots` manage persisted allowed roots in the audit DB
+- `/audit add-path <absolute-path>` / `remove-path` / `list-paths` manage persisted allowed roots in the audit DB
 
 ### Hooks system
 

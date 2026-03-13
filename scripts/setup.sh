@@ -65,9 +65,8 @@ fi
 echo
 echo "==> Ensuring CLAUDE.md exists"
 if [[ ! -f "$REPO/CLAUDE.md" ]]; then
-  cp "$REPO/CLAUDE.example.md" "$REPO/CLAUDE.md"
-  echo "Review $REPO/CLAUDE.md before continuing."
-  read -r -p "Press Enter when ready..."
+  echo "$REPO/CLAUDE.md is missing. Restore it before continuing."
+  exit 1
 else
   echo "$REPO/CLAUDE.md already exists; skipping."
 fi
@@ -95,7 +94,7 @@ if command -v claude >/dev/null 2>&1; then
 
   if echo "$mcp_list" | grep -Eq '(^|[^[:alnum:]-])delegate([^[:alnum:]-]|$)'; then
     echo "delegate already registered, skipping."
-    echo "NOTE: To update allowed roots, run: /audit add-root <path>  (then restart Claude Code)"
+    echo "NOTE: To update allowed roots, run: /audit add-path <path>  (then restart Claude Code)"
   else
     claude mcp add -s user delegate \
       --env "CODEX_POOL_ALLOWED_CWD_ROOTS=$ALLOWED_ROOTS" \

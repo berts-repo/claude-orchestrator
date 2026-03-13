@@ -34,12 +34,12 @@ else
 fi
 
 echo
-echo "==> Removing command symlinks into $REPO/slash-commands/"
+echo "==> Removing command symlinks into $REPO/skills/"
 COMMANDS_DIR="$HOME/.claude/commands"
 if [[ -d "$COMMANDS_DIR" ]]; then
   while IFS= read -r link_path; do
     target="$(readlink "$link_path" || true)"
-    if [[ "$target" == "$REPO/slash-commands/"* ]]; then
+    if [[ "$target" == "$REPO/skills/"* ]]; then
       rm "$link_path"
       echo "removed $link_path"
     fi

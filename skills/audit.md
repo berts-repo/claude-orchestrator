@@ -8,9 +8,9 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `report [days]`
 - `log [N] [--list] [--codex|--web] [keyword]`
 - `query <sql>`
-- `add-root <path>`
-- `list-roots`
-- `remove-root <path>`
+- `add-path <path>`
+- `list-paths`
+- `remove-path <path>`
 
 Use `mcp__audit__*` tools for all DB access. Do NOT use `sqlite3` shell commands.
 
@@ -81,20 +81,20 @@ For `log [N] [--list] [--codex|--web] [keyword]`:
   `# | timestamp | type | sandbox | status | duration | prompt_slug`
   - If no rows: `No matching audit tasks found.`
 
-For `list-roots`:
+For `list-paths`:
 - Run `mcp__audit__run_query` with:
   `SELECT key, value FROM config WHERE key LIKE 'allowed_root:%' ORDER BY key`
 - Display as a numbered list of absolute paths by stripping the `allowed_root:` prefix from each `key`.
 - If no rows, print: `No roots configured in audit DB.`
 
-For `add-root <path>`:
+For `add-path <path>`:
 - Validate `<path>` starts with `/`. If not, print: `Error: path must be absolute.` and stop.
 - Call `mcp__audit__set_config` with:
   - `key = "allowed_root:<path>"`
   - `value = "true"`
 - Print confirmation that the root was added.
 
-For `remove-root <path>`:
+For `remove-path <path>`:
 - Validate `<path>` starts with `/`. If not, print: `Error: path must be absolute.` and stop.
 - Call `mcp__audit__delete_config` with:
   - `key = "allowed_root:<path>"`

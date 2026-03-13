@@ -120,7 +120,7 @@ Internally, `server.js` now deduplicates shared task lifecycle logic (used by bo
 
 The codex-delegation server validates every delegated task `cwd` against allowed root prefixes.
 
-- Primary project-managed roots: audit DB config keys `allowed_root:<absolute-path>` (managed via `/audit add-root`, `list-roots`, `remove-root`)
+- Primary project-managed roots: audit DB config keys `allowed_root:<absolute-path>` (managed via `/audit add-path`, `list-paths`, `remove-path`)
 - Bootstrap defaults: `codex-delegation-mcp/config.json` (`allowedRoots`)
 - Override/additive env var: `CODEX_POOL_ALLOWED_CWD_ROOTS` (comma-separated absolute paths, e.g. `/home/me/git,/tmp`)
 - Validation: `cwd` must be absolute, canonicalized, inside an allowed root, and not under blocked system roots (for example `/`, `/etc`, `/usr`)
@@ -132,7 +132,7 @@ invalid cwd '...'. cwd must match one of the configured allowed roots (current: 
 ```
 
 Remediation:
-- Run `/audit add-root <absolute-path>` to persist a root in the audit DB
+- Run `/audit add-path <absolute-path>` to persist a root in the audit DB
 - Optionally set `CODEX_POOL_ALLOWED_CWD_ROOTS` for temporary per-process overrides/additions
 - Ensure delegated task `cwd` uses an absolute path inside one of those roots
 
@@ -208,7 +208,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 ```bash
 # Install (included in Quick Start)
 mkdir -p ~/.claude/commands
-cp slash-commands/*.md ~/.claude/commands/
+cp skills/*.md ~/.claude/commands/
 ```
 
 Slash command cache files `.SESSION.md` and `.SUMMARY.md` are local/project state and are gitignored.
@@ -307,7 +307,7 @@ bash scripts/sync-hooks.sh   # discovers hook frontmatter headers, updates ~/.cl
 
 # 7. Install global slash commands
 mkdir -p ~/.claude/commands
-cp slash-commands/*.md ~/.claude/commands/
+cp skills/*.md ~/.claude/commands/
 
 # 8. Verify setup
 claude mcp list                # delegate-web, delegate, and audit should show "Connected"
@@ -320,7 +320,7 @@ claude "search the web for MCP protocol specification"
 
 ## Setup Details
 
-- **Slash Commands:** Copy `slash-commands/*.md` to `~/.claude/commands/` for global availability.
+- **Slash Commands:** Copy `skills/*.md` to `~/.claude/commands/` for global availability.
 
 ---
 
