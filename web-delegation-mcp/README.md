@@ -55,7 +55,7 @@ Name mapping note: register this MCP server as `delegate-web`; in hook/tool matc
 Unlike Codex (which executes arbitrary code), this server:
 - **Does not spawn shell commands** — it is a Node.js MCP process
 - **Performs network I/O only for web delegation** — provider API calls (`search`) and SSRF-guarded URL reads (`fetch`)
-- **Can write local audit records when `../audit/db.js` is present** (task metadata only)
+- **Can write local audit records when `../audit-mcp/db.js` is present** (task metadata only)
 - **Returns extracted text content** rather than raw HTML payloads
 
 Kernel-level sandboxing (Seatbelt/Bubblewrap) provides limited additional protection for this network-only delegation process. The real security is in input validation, output sanitization, SSRF controls, and the hook-based enforcement layer.

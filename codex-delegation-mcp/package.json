@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "test": "node test-db.mjs"
+    "start": "node server.js"
   },
   "license": "ISC",
   "dependencies": {

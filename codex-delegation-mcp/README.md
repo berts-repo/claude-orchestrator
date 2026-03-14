@@ -39,7 +39,7 @@ For `codex_parallel`, all subprocesses start simultaneously via `Promise.all`. W
 codex-delegation-mcp/
 ├── README.md        # This file
 ├── server.js        # MCP server — registers codex and codex_parallel tools
-├── ../audit/db.js   # SQLite audit DB schema, retention, and task write helpers
+├── ../audit-mcp/db.js   # SQLite audit DB schema, retention, and task write helpers
 ├── ../config.json   # Repo-root allowed/blocked cwd roots (machine-local, gitignored)
 ├── package.json     # Dependencies: @modelcontextprotocol/sdk, zod
 └── node_modules/    # Installed by npm install

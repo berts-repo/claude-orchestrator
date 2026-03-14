@@ -457,13 +457,13 @@ function normalizeTask(task, taskLabel = "task") {
   const blockedRoot = config.blockedPaths.find((blocked) => isWithinRoot(normalizedCwd, blocked));
   if (blockedRoot) {
     throw new Error(
-      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (delegate/config.json).`
+      `${taskLabel}: invalid cwd '${normalizedCwd}'. '${blockedRoot}' is blocked by config (config.json).`
     );
   }
 
   if (allowedCwdRoots.length === 0) {
     throw new Error(
-      `${taskLabel}: no allowed cwd roots configured. Configure roots via delegate/config.json allowedRoots, audit config keys (allowed_root:<path>), or CODEX_POOL_ALLOWED_CWD_ROOTS.`
+      `${taskLabel}: no allowed cwd roots configured. Configure roots via config.json allowedRoots, audit config keys (allowed_root:<path>), or CODEX_POOL_ALLOWED_CWD_ROOTS.`
     );
   }
 

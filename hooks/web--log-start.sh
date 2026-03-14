@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook
 # Records web delegation start time for duration tracking.
-# Companion to web--log-audit.sh (PostToolUse) which computes duration_ms.
+# Companion to web--log-end.sh (PostToolUse) which computes duration_ms.
 # HOOK_EVENT: PreToolUse
 # HOOK_MATCHER: mcp__delegate_web__*
 # HOOK_TIMEOUT: 5

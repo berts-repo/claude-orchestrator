@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for Claude Orchestrator hooks.
 # Source this file — do not execute directly.
-# Provides: SESSION_ID, ensure_dirs()
+# Provides: SESSION_ID
 # HOOK_HELPER: true
 
 # Guard against double-sourcing
@@ -16,8 +16,3 @@ else
   SESSION_ID=$(printf '%s' "${PPID:-0}-$(date -u +%Y-%m-%d)" | shasum -a 256 | cut -c1-12)
 fi
 export SESSION_ID
-
-# ensure_dirs — create ~/.claude if it does not exist
-ensure_dirs() {
-  mkdir -p "${HOME}/.claude"
-}

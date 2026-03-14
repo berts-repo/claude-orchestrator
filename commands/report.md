@@ -45,20 +45,76 @@ Report:
 - Any new/unusual patterns not seen in earlier entries (anomaly detection)
 - Blocked subagent attempts (hooks starting with `block-`)
 
-### Web Delegations (last 7 days)
+### Codex Usage (last 7 / 30 days)
+Call `mcp__audit__run_query` with:
+
+**By model (7d):**
+```sql
+SELECT model, sandbox, status, COUNT(*) as count,
+       CAST(AVG(duration_ms) AS INTEGER) as avg_ms,
+       SUM(token_est) as total_tokens,
+       ROUND(SUM(COALESCE(cost_est_usd, 0)), 4) as total_cost_usd
+FROM tasks
+WHERE tool_type = 'codex'
+  AND started_at > (strftime('%s','now','-7 days') * 1000)
+GROUP BY model, sandbox, status
+ORDER BY count DESC
+```
+
+**By model (30d):**
+```sql
+SELECT model, sandbox, status, COUNT(*) as count,
+       CAST(AVG(duration_ms) AS INTEGER) as avg_ms,
+       SUM(token_est) as total_tokens,
+       ROUND(SUM(COALESCE(cost_est_usd, 0)), 4) as total_cost_usd
+FROM tasks
+WHERE tool_type = 'codex'
+  AND started_at > (strftime('%s','now','-30 days') * 1000)
+GROUP BY model, sandbox, status
+ORDER BY count DESC
+```
+
+Report: model breakdown, sandbox distribution, token totals, estimated cost, success/failure rates.
+
+### Gemini / Web Delegations (last 7 days)
 Call `mcp__audit__run_query` with:
 ```sql
-SELECT tool_name, status, COUNT(*) as count, CAST(AVG(duration_ms) AS INTEGER) as avg_ms
+SELECT tool_name, status, COUNT(*) as count,
+       CAST(AVG(duration_ms) AS INTEGER) as avg_ms,
+       CAST(MAX(duration_ms) AS INTEGER) as max_ms
 FROM web_tasks
 WHERE started_at > (strftime('%s','now','-7 days') * 1000)
 GROUP BY tool_name, status
 ORDER BY count DESC
 ```
 
+Report: search vs fetch breakdown, success/error rates, avg and max latency.
+
+### Claude Sessions (last 30 days)
+Call `mcp__audit__run_query` with:
+```sql
+SELECT s.claude_model,
+       COUNT(DISTINCT s.id) as sessions,
+       COUNT(DISTINCT b.id) as batches,
+       SUM(b.task_count) as total_tasks,
+       SUM(b.total_tokens) as total_tokens,
+       datetime(MIN(s.started_at)/1000, 'unixepoch') as first_seen,
+       datetime(MAX(s.started_at)/1000, 'unixepoch') as last_seen
+FROM sessions s
+LEFT JOIN batches b ON b.session_id = s.id
+WHERE s.started_at > (strftime('%s','now','-30 days') * 1000)
+GROUP BY s.claude_model
+ORDER BY sessions DESC
+```
+
+Report: Claude model used, sessions/batches/tasks counts, total tokens delegated.
+
 Produce a concise markdown report with these sections in order:
 1. Running Tasks
 2. Usage (7d / 30d)
-3. Project Failure Rates
-4. Slowest Batches
-5. Security Events
-6. Web Delegations
+3. Codex Usage by Model (7d / 30d)
+4. Project Failure Rates
+5. Slowest Batches
+6. Security Events
+7. Gemini / Web Delegations
+8. Claude Sessions
