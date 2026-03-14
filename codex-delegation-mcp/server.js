@@ -69,6 +69,11 @@ const parsedMaxConcurrent = parseInt(process.env.MAX_CONCURRENT_CODEX_SPAWNS ?? 
 const MAX_CONCURRENT_CODEX_SPAWNS = Number.isFinite(parsedMaxConcurrent) && parsedMaxConcurrent > 0 ? parsedMaxConcurrent : 0; // 0 = unlimited
 let activeSpawns = 0;
 
+const parsedCacheTtl = parseInt(process.env.CODEX_CACHE_TTL_MS ?? "0", 10);
+const CODEX_CACHE_TTL_MS = Number.isFinite(parsedCacheTtl) && parsedCacheTtl > 0 ? parsedCacheTtl : 0; // 0 = disabled
+/** @type {Map<string, { result: object, expiresAt: number }>} */
+const promptCache = new Map();
+
 function expandHomePath(targetPath) {
   if (targetPath === "~") return USER_HOME;
   if (targetPath.startsWith("~/")) return path.resolve(USER_HOME, targetPath.slice(2));
@@ -143,6 +148,23 @@ function toPromptSlug(prompt) {
 
 function toPromptHash(prompt) {
   return createHash("sha256").update(prompt).digest("hex");
+}
+
+function toPromptCacheKey(prompt, sandbox) {
+  return createHash("sha256").update(`${sandbox}:${prompt}`).digest("hex");
+}
+
+function cacheGet(key) {
+  if (CODEX_CACHE_TTL_MS === 0) return null;
+  const entry = promptCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { promptCache.delete(key); return null; }
+  return entry.result;
+}
+
+function cacheSet(key, result) {
+  if (CODEX_CACHE_TTL_MS === 0) return;
+  promptCache.set(key, { result, expiresAt: Date.now() + CODEX_CACHE_TTL_MS });
 }
 
 function toFailureReason(result) {
@@ -825,6 +847,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       },
       "codex"
     );
+    // Cache check — skip for danger-full-access (side-effectful)
+    if (task.sandbox !== "danger-full-access") {
+      const cacheKey = toPromptCacheKey(task.prompt, task.sandbox);
+      const cached = cacheGet(cacheKey);
+      if (cached) {
+        try {
+          ensureSession(task.model);
+          const cacheInvocationId = randomUUID();
+          const cacheBatchId = randomUUID();
+          const now = Date.now();
+          insertBatch(cacheBatchId, SESSION_ID, 1);
+          const cacheTaskId = insertTask(
+            buildTaskRecord(
+              task,
+              {
+                invocationId: cacheInvocationId,
+                batchId: cacheBatchId,
+                promptSlug: toPromptSlug(task.prompt),
+                project: path.basename(task.cwd),
+                promptTokensEst: Math.ceil(task.prompt.length / 4),
+                taskIndex: 0,
+              },
+              { status: "cache-hit", started_at: now }
+            )
+          );
+          autoTag(cacheTaskId, toPromptSlug(task.prompt), task.sandbox);
+          updateTask(cacheInvocationId, { started_at: now, ended_at: now, duration_ms: 0, status: "cache-hit", failure_reason: null });
+          completeBatch(cacheBatchId, 0, Math.ceil(cached.stdoutBytes / 4));
+          cleanBatchStatus(cacheBatchId);
+        } catch (err) {
+          logDbError("cache-hit audit write failed", err);
+        }
+        return {
+          content: [{ type: "text", text: `[cache hit] ${formatResult(cached)}` }],
+          isError: !cached.success,
+        };
+      }
+    }
+
     const invocationId = randomUUID();
     const batchId = randomUUID();
     const batchStart = Date.now();
@@ -909,6 +970,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       clearCurrentBatchId(invocationId);
     }
 
+    if (result.success && task.sandbox !== "danger-full-access") {
+      cacheSet(toPromptCacheKey(task.prompt, task.sandbox), result);
+    }
+
     return {
       content: [{ type: "text", text: formatResult(result) }],
       isError: !result.success,
@@ -985,12 +1050,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       logDbError("parallel setup failed", error);
     }
 
-    // Fan out — all containers start immediately
+    // Fan out — all containers start immediately; cache-eligible tasks short-circuit
     const settledResults = await Promise.allSettled(
-      normalizedTasks.map((task, i) =>
-        runCodexContainer(task, i, batchStart, {
+      normalizedTasks.map((task, i) => {
+        const state = taskStates[i];
+
+        // Cache check per task (skip danger-full-access)
+        if (task.sandbox !== "danger-full-access") {
+          const cacheKey = toPromptCacheKey(task.prompt, task.sandbox);
+          const cached = cacheGet(cacheKey);
+          if (cached) {
+            const now = Date.now();
+            state.status = "done";
+            state.startedAt = now;
+            state.endedAt = now;
+            state.durationMs = 0;
+            try {
+              updateTask(state.invocationId, { started_at: now, ended_at: now, duration_ms: 0, status: "cache-hit", failure_reason: null });
+              writeBatchStatus(batchId, taskStates);
+            } catch (err) {
+              logDbError(`parallel cache-hit audit write failed (task ${i + 1})`, err);
+            }
+            return Promise.resolve({ ...cached, fromCache: true });
+          }
+        }
+
+        return runCodexContainer(task, i, batchStart, {
           onStart: ({ startedAt }) => {
-            const state = taskStates[i];
             state.status = "running";
             state.startedAt = startedAt;
             try {
@@ -1001,12 +1087,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           },
         }).then((result) => {
-          const state = taskStates[i];
           const storedOutputs = buildStoredOutputs(result, task.prompt, state.project, promptCap);
           state.status = result.success ? "done" : "failed";
           state.startedAt = state.startedAt ?? result.startedAt;
           state.endedAt = result.finishedAt;
           state.durationMs = result.finishedAt - state.startedAt;
+
+          if (result.success && task.sandbox !== "danger-full-access") {
+            cacheSet(toPromptCacheKey(task.prompt, task.sandbox), result);
+          }
 
           try {
             updateTask(state.invocationId, buildFinalizeUpdate(result, storedOutputs, state.startedAt));
@@ -1015,8 +1104,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             logDbError(`parallel completion update failed (task ${i + 1})`, error);
           }
           return result;
-        })
-      )
+        });
+      })
     );
 
     try {

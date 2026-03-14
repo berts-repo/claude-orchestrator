@@ -74,8 +74,8 @@ Identified as a top gap in 2026 — current limits are request-count-based only.
 #### 4.1 Task Dependency Graph (DAG Scheduler)
 `codex_parallel` currently fans out all tasks simultaneously via `Promise.all`. A lightweight DAG scheduler would allow tasks to declare dependencies (`depends_on: ["task_id"]`), enabling chained parallel workflows where later tasks consume earlier results.
 
-#### 4.2 Prompt-Level Result Caching
-Hash each Codex prompt + sandbox mode. On a cache hit, return the stored result without spawning a subprocess. Configurable TTL. Significant savings for repeated exploratory calls (e.g., repeated `read-only` analysis of the same file set).
+#### ~~4.2 Prompt-Level Result Caching~~ ✓ Done
+~~Hash each Codex prompt + sandbox mode; on a cache hit return the stored result without spawning a subprocess.~~ Implemented: in-memory `Map` cache keyed on `sha256(sandbox:prompt)`, TTL via `CODEX_CACHE_TTL_MS` (default 0 = disabled). Both `codex` and `codex_parallel` check/populate the cache. `danger-full-access` prompts are never cached. Cache hits write a synthetic `status: "cache-hit"` audit row. Lazy TTL eviction on read. Last-write-wins on parallel races.
 
 #### ~~4.3 Partial Failure Handling in `codex_parallel`~~ ✓ Done
 ~~Currently, if 1 of 5 parallel tasks fails, `Promise.all` rejects and all results are lost.~~ Switched to `Promise.allSettled`; each result carries `status: "fulfilled"/"rejected"` and the response always succeeds at the MCP level with a summary line (`X/Y tasks succeeded`).
@@ -109,7 +109,7 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 | ~~Per-session Codex spawn cap~~ | ~~Medium~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | ~~Post-task output credential scan~~ | ~~High~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | ~~Structured `retry-after` responses~~ | ~~Medium~~ | ~~Low~~ | ~~**P2**~~ ✓ |
-| Prompt-level result caching | Medium | Medium | **P2** |
+| ~~Prompt-level result caching~~ | ~~Medium~~ | ~~Medium~~ | ~~**P2**~~ ✓ |
 | ~~JSONL audit export~~ | ~~Medium~~ | ~~Low~~ | ~~**P2**~~ ✓ |
 | ~~SQL anomaly alert queries~~ | ~~Medium~~ | ~~Medium~~ | ~~**P2**~~ ✓ |
 | Streaming subprocess output | Medium | High | **P3** |
