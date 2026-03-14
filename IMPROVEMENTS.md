@@ -40,18 +40,14 @@ Auth is handled via Codex CLI (`~/.codex/auth.json`) rather than a raw `OPENAI_A
 
 ### 2. Audit & Observability
 
-#### 2.1 Structured Log Export
-Add an `audit-mcp` tool (`export_jsonl`) that streams the audit DB as newline-delimited JSON. This makes it consumable by external log aggregators (Datadog, Splunk, local ELK) without custom SQL.
+#### ~~2.1 Structured Log Export~~ ✓ Done
+~~Add an `audit-mcp` tool (`export_jsonl`) that streams the audit DB as newline-delimited JSON.~~ Implemented: `export_jsonl` tool accepts `days`, `tool_type`, `table` (`tasks` or `security_events`), and `limit` (max 5000). Appends a `{"truncated":true}` sentinel when the row limit is reached.
 
 #### 2.2 Per-Task Cost Tracking for Codex
 `audit-mcp` tracks `prompt_tokens_est` / `response_token_est` for Claude calls. Extend this to Codex subprocess calls by parsing the `usage` field from Codex stdout and writing it back to the audit DB.
 
-#### 2.3 SQL-Based Anomaly Alert Queries
-Ship a set of canned alert queries in `audit-mcp` that flag suspicious patterns:
-- Sessions with > N tool calls
-- Total token spend > X in a rolling window
-- Repeated identical Codex prompts (potential loop)
-- `danger-full-access` sandbox usage
+#### ~~2.3 SQL-Based Anomaly Alert Queries~~ ✓ Done
+~~Ship a set of canned alert queries in `audit-mcp` that flag suspicious patterns.~~ Implemented as `get_alerts` tool with four configurable queries: high-call-count sessions (`max_calls_per_session`, default 50), token overspend in a rolling window (`max_tokens_per_session`, `token_window_hours`), repeated identical Codex prompts (`repeat_prompt_threshold`, default 3), and `danger-full-access` sandbox usage.
 
 #### 2.4 Full Session Replay
 Store complete prompt + response pairs per Codex task in the audit DB (currently truncated at 2 MB output cap). Pair with the existing `/history` command for a full replay capability.
@@ -114,8 +110,8 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 | ~~Post-task output credential scan~~ | ~~High~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | ~~Structured `retry-after` responses~~ | ~~Medium~~ | ~~Low~~ | ~~**P2**~~ ✓ |
 | Prompt-level result caching | Medium | Medium | **P2** |
-| JSONL audit export | Medium | Low | **P2** |
-| SQL anomaly alert queries | Medium | Medium | **P2** |
+| ~~JSONL audit export~~ | ~~Medium~~ | ~~Low~~ | ~~**P2**~~ ✓ |
+| ~~SQL anomaly alert queries~~ | ~~Medium~~ | ~~Medium~~ | ~~**P2**~~ ✓ |
 | Streaming subprocess output | Medium | High | **P3** |
 | DAG scheduler for `codex_parallel` | High | High | **P3** |
 | Per-task Codex cost tracking | Low | Medium | **P3** |

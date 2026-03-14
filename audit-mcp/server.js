@@ -193,6 +193,99 @@ server.tool(
   }
 );
 
+// --- export_jsonl ---
+
+server.tool(
+  "export_jsonl",
+  "Export audit tasks as newline-delimited JSON (JSONL) for ingestion by external log aggregators. Accepts optional filters; truncates at 5000 rows.",
+  {
+    days:      z.number().int().min(1).max(365).default(7),
+    tool_type: z.string().optional(),
+    table:     z.enum(["tasks", "security_events"]).default("tasks"),
+    limit:     z.number().int().min(1).max(5000).default(5000),
+  },
+  async ({ days, tool_type, table, limit }) => {
+    if (!db) return { content: [{ type: "text", text: "DB not available" }] };
+
+    const cutoff = Date.now() - days * 86_400_000;
+    const where = ["started_at > ?"];
+    const params = [cutoff];
+
+    if (table === "tasks") {
+      if (tool_type) { where.push("tool_type = ?"); params.push(tool_type); }
+      const rows = db.prepare(
+        `SELECT * FROM tasks WHERE ${where.join(" AND ")} ORDER BY started_at DESC LIMIT ?`
+      ).all(...params, limit);
+      const truncated = rows.length === limit;
+      const lines = rows.map((r) => JSON.stringify(r));
+      if (truncated) lines.push(JSON.stringify({ truncated: true, row_limit: limit }));
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+
+    // security_events uses timestamp_ms instead of started_at
+    const seRows = db.prepare(
+      `SELECT * FROM security_events WHERE timestamp_ms > ? ORDER BY timestamp_ms DESC LIMIT ?`
+    ).all(cutoff, limit);
+    const truncated = seRows.length === limit;
+    const lines = seRows.map((r) => JSON.stringify(r));
+    if (truncated) lines.push(JSON.stringify({ truncated: true, row_limit: limit }));
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+);
+
+// --- get_alerts ---
+
+server.tool(
+  "get_alerts",
+  "Run four canned anomaly-detection queries: high-call-count sessions, token overspend, repeated identical Codex prompts (loop detection), and danger-full-access sandbox usage.",
+  {
+    max_calls_per_session: z.number().int().min(1).default(50),
+    max_tokens_per_session: z.number().int().min(1).default(100_000),
+    token_window_hours: z.number().int().min(1).max(168).default(24),
+    repeat_prompt_threshold: z.number().int().min(2).default(3),
+  },
+  async ({ max_calls_per_session, max_tokens_per_session, token_window_hours, repeat_prompt_threshold }) => {
+    if (!db) return { content: [{ type: "text", text: "DB not available" }] };
+
+    const tokenCutoff = Date.now() - token_window_hours * 3_600_000;
+
+    const highCallSessions = db.prepare(
+      `SELECT session_id, COUNT(*) as call_count
+       FROM tasks GROUP BY session_id HAVING call_count > ?
+       ORDER BY call_count DESC LIMIT 20`
+    ).all(max_calls_per_session);
+
+    const tokenOverspend = db.prepare(
+      `SELECT session_id,
+              SUM(prompt_tokens_est + response_token_est) as total_tokens
+       FROM tasks WHERE started_at > ?
+       GROUP BY session_id HAVING total_tokens > ?
+       ORDER BY total_tokens DESC LIMIT 20`
+    ).all(tokenCutoff, max_tokens_per_session);
+
+    const repeatedPrompts = db.prepare(
+      `SELECT prompt_hash, prompt_slug, COUNT(*) as repeat_count
+       FROM tasks WHERE tool_type = 'codex'
+       GROUP BY prompt_hash HAVING repeat_count > ?
+       ORDER BY repeat_count DESC LIMIT 20`
+    ).all(repeat_prompt_threshold);
+
+    const dangerSandbox = db.prepare(
+      `SELECT invocation_id, session_id, project, prompt_slug, started_at, status
+       FROM tasks WHERE sandbox = 'danger-full-access'
+       ORDER BY started_at DESC LIMIT 20`
+    ).all();
+
+    const alerts = {
+      high_call_sessions:   { threshold: max_calls_per_session,  hits: highCallSessions },
+      token_overspend:      { threshold: max_tokens_per_session, window_hours: token_window_hours, hits: tokenOverspend },
+      repeated_prompts:     { threshold: repeat_prompt_threshold, hits: repeatedPrompts },
+      danger_full_access:   { hits: dangerSandbox },
+    };
+    return { content: [{ type: "text", text: JSON.stringify(alerts, null, 2) }] };
+  }
+);
+
 // --- Start ---
 
 async function main() {
