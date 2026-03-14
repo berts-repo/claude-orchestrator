@@ -35,7 +35,11 @@ esac
 
 prompt_hash="$(codex_log_correlation_key "$tool_name" "$prompt")"
 request_nonce="$(codex_log_extract_request_nonce "$payload")"
-[[ -n "$request_nonce" ]] || exit 0
+if [[ -z "$request_nonce" ]]; then
+  fallback_seed="${SESSION_ID:-}|$tool_name|${prompt:0:32}"
+  request_nonce="fallback-$(printf '%s' "$fallback_seed" | shasum -a 256 | cut -c1-16)"
+  echo "WARN: request_nonce missing, using fallback correlation key" >&2
+fi
 
 invocation_key="${prompt_hash}-${request_nonce}"
 

@@ -219,12 +219,12 @@ const SandboxMode = z.enum(["read-only", "workspace-write", "danger-full-access"
 const ApprovalPolicy = z.enum(["untrusted", "on-failure", "on-request", "never"]);
 
 const TaskSchema = z.object({
-  prompt: z.string().min(1).describe("The task prompt for Codex"),
+  prompt: z.string().min(1).max(50000).describe("The task prompt for Codex"),
   cwd: z.string().min(1).describe("Absolute path to the working directory to mount"),
   sandbox: SandboxMode.default("workspace-write"),
   "approval-policy": ApprovalPolicy.default("on-failure").describe("When Codex must ask for approval"),
   model: z.string().optional().describe("Model override (e.g. 'o4-mini')"),
-  "base-instructions": z.string().optional().describe("Override system instructions"),
+  "base-instructions": z.string().max(20000).optional().describe("Override system instructions"),
   "skip-git-repo-check": z.boolean().optional().describe("Pass --skip-git-repo-check to codex exec"),
 });
 
@@ -613,6 +613,41 @@ function buildFinalizeUpdate(result, storedOutputs, startedAt) {
   };
 }
 
+function coerceArgs(args) {
+  let coerced = args;
+  if (typeof coerced === "string") {
+    try {
+      coerced = JSON.parse(coerced);
+    } catch {}
+  }
+
+  if (!coerced || typeof coerced !== "object" || Array.isArray(coerced)) {
+    return coerced;
+  }
+
+  if (typeof coerced.prompt !== "string") {
+    return coerced;
+  }
+
+  const promptText = coerced.prompt.trim();
+  if (!promptText.startsWith("{") || !promptText.endsWith("}")) {
+    return coerced;
+  }
+
+  try {
+    const parsedPrompt = JSON.parse(promptText);
+    if (!parsedPrompt || typeof parsedPrompt !== "object" || Array.isArray(parsedPrompt)) {
+      return coerced;
+    }
+    if (!Object.hasOwn(parsedPrompt, "cwd") && !Object.hasOwn(parsedPrompt, "sandbox")) {
+      return coerced;
+    }
+    return { ...coerced, ...parsedPrompt };
+  } catch {
+    return coerced;
+  }
+}
+
 // ── MCP Server ─────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -702,7 +737,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "codex") {
-    const parsedTask = TaskSchema.parse(args);
+    const parsedTask = TaskSchema.parse(coerceArgs(args));
     const task = normalizeTask(
       {
         ...parsedTask,
@@ -748,8 +783,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const result = await runCodexContainer(task, 0, batchStart);
     const storedOutputs = buildStoredOutputs(result, task.prompt, project, promptCap);
 
+    let taskFinalizePersisted = false;
+    let batchCompleted = false;
     try {
       updateTask(invocationId, buildFinalizeUpdate(result, storedOutputs, result.startedAt));
+      taskFinalizePersisted = true;
       statusTasks[0] = {
         ...statusTasks[0],
         status: result.success ? "done" : "failed",
@@ -758,9 +796,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       writeBatchStatus(batchId, statusTasks);
       completeBatch(batchId, result.success ? 0 : 1, Math.ceil(result.stdoutBytes / 4));
+      batchCompleted = true;
       cleanBatchStatus(batchId);
     } catch (error) {
       logDbError("single task finalize failed", error);
+      const endedAt = Date.now();
+      const startedAt = result.startedAt ?? batchStart;
+      const durationMs = endedAt - startedAt;
+      if (!taskFinalizePersisted) {
+        try {
+          updateTask(invocationId, {
+            started_at: startedAt,
+            ended_at: endedAt,
+            duration_ms: durationMs,
+            status: "failed",
+            failure_reason: "audit_finalize_error",
+            error_text: `finalize failure: ${error.message}`,
+          });
+        } catch (fallbackError) {
+          logDbError("single task finalize fallback task update failed", fallbackError);
+        }
+      }
+      if (!batchCompleted) {
+        try {
+          completeBatch(batchId, 1, Math.ceil((result.stdoutBytes ?? 0) / 4));
+        } catch (fallbackError) {
+          logDbError("single task finalize fallback batch completion failed", fallbackError);
+        }
+      }
+      cleanBatchStatus(batchId);
     } finally {
       clearCurrentBatchId(invocationId);
     }
@@ -881,5 +945,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // ── Start ───────────────────────────────────────────────────────────────────
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+process.on("unhandledRejection", (error) => {
+  console.error("[codex-delegation] unhandledRejection", error);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[codex-delegation] uncaughtException", error);
+  process.exit(1);
+});
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

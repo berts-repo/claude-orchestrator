@@ -22,6 +22,7 @@ function initSchema(conn) {
   conn.exec(`
     PRAGMA journal_mode=WAL;
     PRAGMA synchronous=NORMAL;
+    PRAGMA foreign_keys=ON;
 
     CREATE TABLE IF NOT EXISTS sessions (
       id           TEXT PRIMARY KEY,
@@ -78,7 +79,7 @@ function initSchema(conn) {
     );
 
     CREATE TABLE IF NOT EXISTS task_tags (
-      task_id    INTEGER REFERENCES tasks(id),
+      task_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
       tag        TEXT,
       tag_source TEXT,
       PRIMARY KEY (task_id, tag)
@@ -176,6 +177,30 @@ export function migrateSchema(conn) {
   const configCols = new Set(conn.prepare("PRAGMA table_info(config)").all().map((c) => c.name));
   if (!configCols.has("updated_at")) {
     conn.exec("ALTER TABLE config ADD COLUMN updated_at TEXT");
+  }
+
+  // Ensure task_tags foreign key cascades when tasks are deleted.
+  const taskTagFks = conn.prepare("PRAGMA foreign_key_list(task_tags)").all();
+  const hasTaskCascadeDelete = taskTagFks.some(
+    (fk) =>
+      fk.table === "tasks" &&
+      fk.from === "task_id" &&
+      String(fk.on_delete).toUpperCase() === "CASCADE"
+  );
+  if (!hasTaskCascadeDelete) {
+    conn.exec(`
+      ALTER TABLE task_tags RENAME TO task_tags_old;
+      CREATE TABLE task_tags (
+        task_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+        tag        TEXT,
+        tag_source TEXT,
+        PRIMARY KEY (task_id, tag)
+      );
+      INSERT INTO task_tags (task_id, tag, tag_source)
+      SELECT task_id, tag, tag_source FROM task_tags_old;
+      DROP TABLE task_tags_old;
+      CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag);
+    `);
   }
 }
 
@@ -535,7 +560,7 @@ export function updateTask(invocationId, fields) {
     mergedRedactionCount = safeProvidedRedactionCount + incrementalRedactionCount;
   }
 
-  statements.updateTask.run({
+  const result = statements.updateTask.run({
     invocation_id: invocationId,
     batch_id: fields.batch_id,
     session_id: fields.session_id,
@@ -570,6 +595,9 @@ export function updateTask(invocationId, fields) {
     response_token_est: fields.response_token_est,
     cost_est_usd: fields.cost_est_usd,
   });
+  if (result.changes === 0) {
+    throw new Error(`updateTask: no row matched invocation_id=${invocationId}`);
+  }
 }
 
 export function completeBatch(batchId, failedCount, totalTokens) {

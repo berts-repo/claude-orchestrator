@@ -108,7 +108,12 @@ done
 echo
 [[ ${#hook_scripts[@]} -gt 0 ]] || die "no hooks discovered (all scripts were marked as helpers?)"
 
-disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json" 2>/dev/null || true)"
+if [[ -f "$REPO_DIR/config.json" ]]; then
+  disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json")" \
+    || die "config.json is invalid JSON — fix it before syncing hooks"
+else
+  disabled_hooks=""
+fi
 disabled_hooks_json="$(printf '%s\n' "$disabled_hooks" | jq -Rsc 'split("\n") | map(select(length > 0))')"
 
 new_hooks="$(jq -s --arg hdir "$HOOKS_LINK_DIR" --argjson disabled "$disabled_hooks_json" '

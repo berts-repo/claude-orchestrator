@@ -256,9 +256,31 @@ server.registerTool(
       };
     }
 
+    try {
+      const inputUrlObj = new URL(url);
+      if (inputUrlObj.username || inputUrlObj.password) {
+        return {
+          content: [{ type: "text", text: "[fetch error: URL must not contain credentials]" }],
+          isError: true,
+        };
+      }
+    } catch {
+      return {
+        content: [{ type: "text", text: "[fetch error: invalid URL]" }],
+        isError: true,
+      };
+    }
+
     const _fetchT0 = Date.now();
     try {
       const { html, finalUrl } = await fetchUrl(url);
+      let sanitizedFinalUrl = finalUrl;
+      try {
+        const urlObj = new URL(finalUrl);
+        urlObj.username = "";
+        urlObj.password = "";
+        sanitizedFinalUrl = urlObj.href;
+      } catch {}
       const { document } = parseHTML(html);
       const article = new Readability(document).parse();
       const htmlForConversion = article?.content || html;
@@ -279,7 +301,7 @@ server.registerTool(
 
       const cleanText = sanitizeResponse(text || "", MAX_RESPONSE_LENGTH);
       const output = [
-        `[Source: ${finalUrl}]`,
+        `[Source: ${sanitizedFinalUrl}]`,
         "--- BEGIN UNTRUSTED WEB CONTENT ---",
         "",
         cleanText,
@@ -295,7 +317,7 @@ server.registerTool(
             tool_type: "web-fetch",
             session_id: _sessionId,
             prompt_slug: url.slice(0, 80),
-            url: finalUrl || url,
+            url: sanitizedFinalUrl || url,
             status: "done",
             started_at: Date.now() - _duration,
             ended_at: Date.now(),
@@ -384,6 +406,23 @@ server.registerResource(
 
 // --- Start ---
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-log.info("web-delegation-mcp server started", { provider: provider.getName() });
+process.on("unhandledRejection", (err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  log.info("web-delegation-mcp server started", { provider: provider.getName() });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

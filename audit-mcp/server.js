@@ -164,6 +164,24 @@ server.tool(
   },
   async ({ sql, params }) => {
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
+    if (sql.length > 4000) {
+      return {
+        content: [{ type: "text", text: "Error: query length exceeds 4000 characters" }],
+        isError: true,
+      };
+    }
+    if (sql.includes("--") || sql.includes("/*")) {
+      return {
+        content: [{ type: "text", text: "Error: SQL comments are not allowed in queries" }],
+        isError: true,
+      };
+    }
+    if (sql.includes(";")) {
+      return {
+        content: [{ type: "text", text: "Error: semicolons are not allowed; only single-statement queries are permitted" }],
+        isError: true,
+      };
+    }
     if (!sql.trim().toUpperCase().startsWith("SELECT")) {
       return {
         content: [{ type: "text", text: "Error: only SELECT queries are allowed" }],
