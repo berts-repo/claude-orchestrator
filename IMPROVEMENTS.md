@@ -29,9 +29,9 @@ Add a `PreToolUse` hook that inspects outbound Codex prompts for scope creep —
 `web-delegation-mcp` already sanitizes content before returning it to Claude. However, when Claude constructs a Codex prompt that incorporates web-fetched content, that content bypasses the web sanitizer. The fix: add a lightweight injection-pattern scan inside `codex-delegation-mcp/server.js` before spawning the subprocess.
 
 #### 1.3 Short-Lived / Scoped Credentials
-`OPENAI_API_KEY` is currently a static long-lived credential. Options:
-- Rotate the key per session using a local key-management wrapper
-- Scope keys by project root so a compromised Codex subprocess cannot access other projects
+Auth is handled via Codex CLI (`~/.codex/auth.json`) rather than a raw `OPENAI_API_KEY`. Options:
+- Add a pre-spawn check that validates the Codex auth token is still fresh before each subprocess call
+- Scope auth per project root so a compromised Codex subprocess cannot be reused across projects
 
 #### 1.4 Post-Task Output Scanning
 Add a `PostToolUse` hook that scans Codex subprocess responses for credential patterns (API keys, tokens, private key headers) before the output is surfaced to Claude.
