@@ -59,6 +59,7 @@ const DEFAULT_CONFIG = {
 };
 const BLOCKED_HOME_DIR_NAMES = new Set([".ssh", ".gnupg", ".aws", ".config", ".local", ".cache", ".claude"]);
 const ALLOW_DANGER_SANDBOX = process.env.CODEX_ALLOW_DANGER_SANDBOX === "1";
+const INJECTION_SCAN_ENABLED = process.env.CODEX_INJECTION_SCAN !== "0";
 
 const parsedMaxSpawns = parseInt(process.env.MAX_CODEX_SPAWNS_PER_SESSION ?? "0", 10);
 const MAX_CODEX_SPAWNS_PER_SESSION = Number.isFinite(parsedMaxSpawns) && parsedMaxSpawns > 0 ? parsedMaxSpawns : 0; // 0 = unlimited
@@ -443,6 +444,45 @@ function getBlockedHomePath(normalizedCwd) {
 }
 
 
+// Imperative override phrases that indicate a prompt injection attempt.
+// Patterns are anchored to action-verb + subject constructions to minimise
+// false positives on prompts that legitimately *describe* these techniques.
+const PROMPT_INJECTION_PATTERNS = [
+  // Instruction-override imperatives
+  /\bignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|context|rules?)\b/i,
+  /\bdisregard\s+(all\s+)?(previous|prior|above|earlier|your)\b/i,
+  /\bforget\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|context|rules?)\b/i,
+  /\byou\s+are\s+now\s+(?!a\s+(?:senior|junior|experienced|software|typescript|python|rust))/i,
+  /\bact\s+as\s+(?:a\s+)?(?:different|new|unrestricted|jailbroken|evil|malicious)\b/i,
+  /\bnew\s+(system\s+)?(?:instructions?|prompt|role|persona|task):/i,
+
+  // Embedded system-level markup
+  /<\s*system\s*>/i,
+  /\[SYSTEM\]/,
+  /###\s*system/i,
+
+  // Shell command injection in prompt text (backticks, $() expansion, heredoc abuse)
+  /`[^`]{1,200}`/,          // backtick command substitution
+  /\$\([^)]{1,200}\)/,      // $() substitution
+  /;\s*(?:rm|curl|wget|nc|bash|sh|python|node|eval)\b/i,
+
+  // Credential / exfiltration instructions
+  /\b(?:send|upload|post|exfiltrate|transmit)\s+(?:all\s+)?(?:files?|keys?|tokens?|secrets?|credentials?)\b/i,
+  /\bread\s+(?:and\s+)?(?:send|upload|return|output)\s+(?:~\/\.|\$HOME\/\.)/i,
+];
+
+function scanPromptForInjection(prompt, taskLabel) {
+  if (!INJECTION_SCAN_ENABLED) return;
+  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+    if (pattern.test(prompt)) {
+      throw new Error(
+        `${taskLabel}: prompt rejected by injection scanner (matched: ${pattern}). ` +
+        `Review the prompt for instruction-override language. Set CODEX_INJECTION_SCAN=0 to disable.`
+      );
+    }
+  }
+}
+
 function normalizeTask(task, taskLabel = "task") {
   const allowedCwdRoots = parseAllowedCwdRoots();
   if (!path.isAbsolute(task.cwd)) {
@@ -491,6 +531,8 @@ function normalizeTask(task, taskLabel = "task") {
     );
     approvalPolicy = "untrusted";
   }
+
+  scanPromptForInjection(task.prompt, taskLabel);
 
   return {
     ...task,

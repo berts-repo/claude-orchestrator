@@ -25,8 +25,8 @@ Aligned with the **OWASP Top 10 for LLMs 2025** — specifically "Excessive Agen
 #### 1.1 Excessive Agency Detection Hook
 Add a `PreToolUse` hook that inspects outbound Codex prompts for scope creep — e.g., tasks requesting `danger-full-access` without an explicit user instruction, or prompts referencing paths outside the declared `cwd`.
 
-#### 1.2 Prompt Injection Hardening at the Delegation Boundary
-`web-delegation-mcp` already sanitizes content before returning it to Claude. However, when Claude constructs a Codex prompt that incorporates web-fetched content, that content bypasses the web sanitizer. The fix: add a lightweight injection-pattern scan inside `codex-delegation-mcp/server.js` before spawning the subprocess.
+#### ~~1.2 Prompt Injection Hardening at the Delegation Boundary~~ ✓ Done
+~~Add a lightweight injection-pattern scan inside `codex-delegation-mcp/server.js` before spawning the subprocess.~~ Implemented as `scanPromptForInjection()` called inside `normalizeTask()`, covering both `codex` and `codex_parallel`. Patterns target imperative override phrases (`ignore previous instructions`, `you are now`, `new system prompt:`, `<system>` tags, backtick/`$()` shell substitution, exfiltration instructions) with allowlists for legitimate uses. Opt-out via `CODEX_INJECTION_SCAN=0`.
 
 #### 1.3 Short-Lived / Scoped Credentials
 Auth is handled via Codex CLI (`~/.codex/auth.json`) rather than a raw `OPENAI_API_KEY`. Options:
@@ -111,7 +111,7 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 |---|---|---|---|
 | ~~Partial failure in `codex_parallel`~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
 | ~~Provider fallback chain (web)~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
-| Prompt injection scan at delegation boundary | High | Medium | **P1** |
+| ~~Prompt injection scan at delegation boundary~~ | ~~High~~ | ~~Medium~~ | ~~**P1**~~ ✓ |
 | Token-bucket rate limiter | High | Medium | **P1** |
 | ~~Per-session Codex spawn cap~~ | ~~Medium~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | ~~Post-task output credential scan~~ | ~~High~~ | ~~Low~~ | ~~**P1**~~ ✓ |
