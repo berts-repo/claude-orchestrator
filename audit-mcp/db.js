@@ -72,7 +72,8 @@ function initSchema(conn) {
       output_truncated TEXT,
       error_text       TEXT,
       redaction_count  INTEGER DEFAULT 0,
-      token_est        INTEGER,
+      prompt_tokens_est INTEGER,
+      response_token_est INTEGER,
       cost_est_usd     REAL
     );
 
@@ -148,6 +149,29 @@ export function migrateSchema(conn) {
   if (!cols.has("output_full")) {
     conn.exec("ALTER TABLE tasks ADD COLUMN output_full TEXT");
   }
+  if (cols.has("token_est") && !cols.has("response_token_est")) {
+    try {
+      conn.exec("ALTER TABLE tasks RENAME COLUMN token_est TO response_token_est");
+    } catch {
+      try {
+        conn.exec("ALTER TABLE tasks ADD COLUMN response_token_est INTEGER");
+      } catch {}
+      conn.exec(`
+        UPDATE tasks
+        SET response_token_est = COALESCE(response_token_est, token_est)
+        WHERE token_est IS NOT NULL
+      `);
+    }
+  }
+  try {
+    conn.exec("ALTER TABLE tasks ADD COLUMN prompt_tokens_est INTEGER");
+  } catch {}
+  try {
+    conn.exec("ALTER TABLE tasks ADD COLUMN response_token_est INTEGER");
+  } catch {}
+  try {
+    conn.exec("ALTER TABLE tasks DROP COLUMN token_est");
+  } catch {}
   // Ensure config table has updated_at column
   const configCols = new Set(conn.prepare("PRAGMA table_info(config)").all().map((c) => c.name));
   if (!configCols.has("updated_at")) {
@@ -189,13 +213,13 @@ function setupStatements(conn) {
         project, cwd, prompt_slug, prompt_hash, prompt, url, sandbox, approval, model,
         skip_git_check, started_at, ended_at, duration_ms, exit_code, status, failure_reason,
         timed_out, output_capped, stdout_bytes, stderr_bytes, output_truncated, output_full, error_text,
-        redaction_count, token_est, cost_est_usd
+        redaction_count, prompt_tokens_est, response_token_est, cost_est_usd
       ) VALUES (
         @invocation_id, @batch_id, @session_id, @parent_task_id, @task_index, @tool_type,
         @project, @cwd, @prompt_slug, @prompt_hash, @prompt, @url, @sandbox, @approval, @model,
         @skip_git_check, @started_at, @ended_at, @duration_ms, @exit_code, @status, @failure_reason,
         @timed_out, @output_capped, @stdout_bytes, @stderr_bytes, @output_truncated, @output_full, @error_text,
-        @redaction_count, @token_est, @cost_est_usd
+        @redaction_count, @prompt_tokens_est, @response_token_est, @cost_est_usd
       )
     `),
     updateTask: conn.prepare(`
@@ -229,7 +253,8 @@ function setupStatements(conn) {
         output_full = COALESCE(@output_full, output_full),
         error_text = COALESCE(@error_text, error_text),
         redaction_count = COALESCE(@redaction_count, redaction_count),
-        token_est = COALESCE(@token_est, token_est),
+        prompt_tokens_est = COALESCE(@prompt_tokens_est, prompt_tokens_est),
+        response_token_est = COALESCE(@response_token_est, response_token_est),
         cost_est_usd = COALESCE(@cost_est_usd, cost_est_usd)
       WHERE invocation_id = @invocation_id
     `),
@@ -482,7 +507,8 @@ export function insertTask(fields) {
     output_full: outputFullRedaction.text ?? null,
     error_text: errorRedaction.text ?? null,
     redaction_count: totalRedactionCount,
-    token_est: fields.token_est ?? null,
+    prompt_tokens_est: fields.prompt_tokens_est ?? null,
+    response_token_est: fields.response_token_est ?? null,
     cost_est_usd: fields.cost_est_usd ?? null,
   });
   return Number(result.lastInsertRowid);
@@ -540,7 +566,8 @@ export function updateTask(invocationId, fields) {
     output_full: outputFullRedaction.text,
     error_text: errorRedaction.text,
     redaction_count: mergedRedactionCount,
-    token_est: fields.token_est,
+    prompt_tokens_est: fields.prompt_tokens_est,
+    response_token_est: fields.response_token_est,
     cost_est_usd: fields.cost_est_usd,
   });
 }

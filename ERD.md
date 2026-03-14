@@ -61,7 +61,8 @@ erDiagram
         text output_full
         text error_text
         integer redaction_count
-        integer token_est
+        integer prompt_tokens_est
+        integer response_token_est
         real cost_est_usd
     }
 

@@ -26,7 +26,8 @@ This diagram describes the database schema used by the `audit-mcp` service and s
 ║ total_tokens         ║  ║ project              ║  ║ severity             ║  ║ ended_at             ║
 ╚══════════════════════╝  ║ cwd                  ║  ║ pattern_matched      ║  ║ duration_ms          ║
                           ║ status               ║  ║ command_preview      ║  ║ error_text           ║
-                          ║ token_est            ║  ║ cwd                  ║  ║ cwd                  ║
+                          ║ prompt_tokens_est    ║  ║ cwd                  ║  ║ cwd                  ║
+                          ║ response_token_est   ║  ║                      ║  ║                      ║
                           ║ cost_est_usd         ║  ╚══════════════════════╝  ╚══════════════════════╝
                           ╚═══════════╤══════════╝
                                       │

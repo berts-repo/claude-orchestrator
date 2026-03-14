@@ -553,7 +553,8 @@ function buildTaskRecord(task, state, overrides) {
     output_truncated: null,
     error_text: null,
     redaction_count: 0,
-    token_est: state.tokenEst,
+    prompt_tokens_est: state.promptTokensEst,
+    response_token_est: null,
     cost_est_usd: null,
   };
 }
@@ -603,6 +604,7 @@ function buildFinalizeUpdate(result, storedOutputs, startedAt) {
     output_capped: result.outputCapped ? 1 : 0,
     stdout_bytes: result.stdoutBytes,
     stderr_bytes: result.stderrBytes,
+    response_token_est: Math.ceil(result.stdoutBytes / 4),
     prompt: storedOutputs.promptValue,
     output_truncated: storedOutputs.outputValue,
     output_full: storedOutputs.outputFullValue,
@@ -713,7 +715,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const batchStart = Date.now();
     const promptSlug = toPromptSlug(task.prompt);
     const project = path.basename(task.cwd);
-    const tokenEst = Math.ceil(task.prompt.length / 4);
+    const promptTokensEst = Math.ceil(task.prompt.length / 4);
     const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
     const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
     const statusTasks = [{
@@ -733,7 +735,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const taskId = insertTask(
         buildTaskRecord(
           task,
-          { invocationId, batchId, promptSlug, project, tokenEst, taskIndex: 0 },
+          { invocationId, batchId, promptSlug, project, promptTokensEst, taskIndex: 0 },
           { status: "running", started_at: batchStart }
         )
       );
@@ -755,7 +757,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         durationMs: result.finishedAt - result.startedAt,
       };
       writeBatchStatus(batchId, statusTasks);
-      completeBatch(batchId, result.success ? 0 : 1, tokenEst);
+      completeBatch(batchId, result.success ? 0 : 1, Math.ceil(result.stdoutBytes / 4));
       cleanBatchStatus(batchId);
     } catch (error) {
       logDbError("single task finalize failed", error);
@@ -793,7 +795,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       startedAt: null,
       endedAt: null,
       durationMs: null,
-      tokenEst: Math.ceil(task.prompt.length / 4),
+      promptTokensEst: Math.ceil(task.prompt.length / 4),
     }));
 
     ensureSession(normalizedTasks[0]?.model);
@@ -809,7 +811,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               batchId,
               promptSlug: state.promptSlug,
               project: state.project,
-              tokenEst: state.tokenEst,
+              promptTokensEst: state.promptTokensEst,
               taskIndex: state.index,
             },
             { status: "queued", started_at: null }
@@ -858,7 +860,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     try {
       const failedCount = results.filter((result) => !result.success).length;
-      const totalTokens = taskStates.reduce((sum, state) => sum + state.tokenEst, 0);
+      const totalTokens = results.reduce((sum, r) => sum + Math.ceil((r.stdoutBytes ?? 0) / 4), 0);
       completeBatch(batchId, failedCount, totalTokens);
       cleanBatchStatus(batchId);
     } catch (error) {

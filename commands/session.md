@@ -81,7 +81,7 @@ After Codex returns:
   [markdown table with columns: timestamp | type | sandbox | status | duration | prompt_slug]
   [status column uses ✓ for success and ✗ for failed]
   [if any displayed rows have non-null failure_reason, list each inline below the table]
-  [footer line: total token_est for displayed tasks]
+  [footer line: total response_token_est for displayed tasks]
 - If --append AND .SESSION.md exists:
     new content = [Codex output] + "\n\n---\n\n" + [existing .SESSION.md contents]
     Write new content to .SESSION.md

@@ -35,7 +35,7 @@ Call `mcp__audit__get_report` with `days=1` and show the `running` field only.
 SELECT tool_type, sandbox, status, COUNT(*) as count,
        CAST(AVG(duration_ms) AS INTEGER) as avg_ms,
        MAX(duration_ms) as max_ms,
-       SUM(token_est) as token_sum
+       SUM(prompt_tokens_est) as prompt_tokens, SUM(response_token_est) as response_tokens
 FROM tasks
 WHERE <scope>
 GROUP BY tool_type, sandbox, status
@@ -49,7 +49,7 @@ ORDER BY count DESC
 ```sql
 SELECT model, sandbox, status, COUNT(*) as count,
        CAST(AVG(duration_ms) AS INTEGER) as avg_ms,
-       SUM(token_est) as total_tokens,
+       SUM(prompt_tokens_est) as total_prompt_tokens, SUM(response_token_est) as total_response_tokens,
        ROUND(SUM(COALESCE(cost_est_usd, 0)), 4) as total_cost_usd
 FROM tasks
 WHERE tool_type = 'codex'

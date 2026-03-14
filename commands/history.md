@@ -27,7 +27,7 @@ If `--session` is not provided:
 - Use the returned `session_id` for the next query.
 
 Then call `mcp__audit__run_query` with:
-`SELECT b.id as batch_id, b.started_at, b.task_count, b.failed_count, t.task_index, t.prompt, t.output_full, t.status, t.duration_ms, t.exit_code FROM batches b JOIN tasks t ON t.batch_id = b.id WHERE b.session_id = '<session_id>' ORDER BY b.started_at DESC, t.task_index LIMIT <n * 20>`
+`SELECT b.id as batch_id, b.started_at, b.task_count, b.failed_count, t.task_index, t.prompt, t.output_full, t.status, t.duration_ms, t.exit_code, t.prompt_tokens_est, t.response_token_est FROM batches b JOIN tasks t ON t.batch_id = b.id WHERE b.session_id = '<session_id>' ORDER BY b.started_at DESC, t.task_index LIMIT <n * 20>`
 
 Replace:
 - `<session_id>` with the resolved session id
@@ -38,12 +38,14 @@ Present results grouped by batch, ordered by `started_at DESC`:
   - `batch_id` shortened to first 8 chars
   - `started_at`
   - status summary derived from batch fields (include `task_count` and `failed_count`)
+  - token totals across batch tasks as `tokens: 847p / 312r`
 - Under each batch, list every task row with:
   - `task_index`
   - `prompt` (full)
   - `output_full` (full)
   - `status`
   - `duration_ms`
+  - `prompt_tokens_est` and `response_token_est` as `tokens: 13 → 8` (prompt → response)
 
 If the batch/task query returns no rows, print: `No batches found for session <session_id>.`
 

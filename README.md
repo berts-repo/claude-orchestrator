@@ -238,11 +238,12 @@ All log entries share a unified schema with envelope fields: `timestamp`, `level
 
 Primary audit storage is SQLite at `~/.claude/audit.db`. The schema and retention logic live in `audit-mcp/db.js`. The `audit` MCP server is the DB owner: it initialises schema, runs retention cleanup at startup, and exposes the DB to Claude via MCP tools (`get_tasks`, `get_report`, `get_status`, `set_config`, `delete_config`, `run_query`).
 
-- Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing)
+- Stores Codex task/delegation records (prompt slug/hash, output, status, cwd/project, timing, token estimates)
 - Stores web MCP task records in `web_tasks` (`tool_name`, prompt/hash, status, timestamps, duration, error text)
 - Stores denied-action security records in `security_events` (hook/tool, severity, pattern, command preview, cwd)
 - Includes status and timing fields such as `status`, `started_at`, `ended_at`, and `duration_ms`
 - Captures related metadata like project, cwd, tool type, prompt slug/hash, and failure reason
+- Stores token estimate fields on `tasks`: `prompt_tokens_est` (estimated input tokens, `Math.ceil(prompt.length / 4)`, set at task creation) and `response_token_est` (estimated output tokens, `Math.ceil(stdout_bytes / 4)`, set after subprocess completion)
 - Stores `output_truncated` for all tasks and `output_full` when full-output storage is enabled
 - Use `/audit` for direct SQLite queries/config updates; the `/audit` slash command calls `mcp__audit__*` tools under the hood
 - Run `/report` for a dashboard view of audit DB metrics across Codex tasks, web tasks, and security events
@@ -253,9 +254,9 @@ Global slash commands are installed to `~/.claude/commands/`:
 | Command | Purpose |
 |---|---|
 | `/audit` | Inspect and manage the SQLite audit DB (`~/.claude/audit.db`): status/report/log/query plus config and allowed-root management |
-| `/history` | Retrieve recent audit batch history with full task prompts/responses; defaults to the latest session |
+| `/history` | Retrieve recent audit batch history with full task prompts/responses and per-task/per-batch token-estimate totals; defaults to the latest session |
 | `/direct` | Handle a task directly with Claude tools (no MCP delegation by default); `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
-| `/report` | Generate a monitoring report (session-scoped by default, or 7/30 day views) across tasks, batches, security events, web usage, and Claude sessions |
+| `/report` | Generate a monitoring report (session-scoped by default, or 7/30 day views) across tasks, batches, security events, web usage, and Claude sessions, including token-estimate usage sections |
 | `/summarize` | Generate project context summaries with size modes/delegation options; optional cache in `.SUMMARY.md` |
 | `/session` | Capture, restore, append, clear, or annotate session snapshots in `.SESSION.md` |
 
@@ -264,9 +265,9 @@ Key command options and defaults:
 | Command | Options / Behavior |
 |---|---|
 | `/audit` | Subcommands: `status`, `report [days]`, `log [N] [--list] [--codex|--web|--security] [keyword]`, `query <sql>` (SELECT-only), `set-project`, `set`, `list-projects`, `add-path`, `list-paths`, `remove-path` |
-| `/history` | Flags: `--session <id>`, `--limit <n>` (default `5`), `--list` / `-l`; default mode resolves latest session and shows grouped batch/task output |
+| `/history` | Flags: `--session <id>`, `--limit <n>` (default `5`), `--list` / `-l`; default mode resolves latest session and shows grouped batch/task output with per-task/per-batch token-estimate totals |
 | `/direct` | Parses task text plus optional `--allow <codex|web|all>`; without `--allow`, MCP codex/web tools remain blocked |
-| `/report` | Flags: `--weekly` / `-w` (last 7 days), `--monthly` / `-m` (last 30 days); default scope is current/latest session. Sections: Running Tasks, Usage Breakdown, Codex Usage by Model, Project Failure Rates, Slowest Batches, Security Events, Gemini/Web Delegations, Claude Sessions |
+| `/report` | Flags: `--weekly` / `-w` (last 7 days), `--monthly` / `-m` (last 30 days); default scope is current/latest session. Sections: Running Tasks, Usage Breakdown, Codex Usage by Model, Project Failure Rates, Slowest Batches, Security Events, Gemini/Web Delegations, Claude Sessions (Usage Breakdown and Codex Usage by Model include `prompt_tokens_est`/`response_token_est` totals) |
 | `/summarize` | Flags: `--small`, `--medium` (default), `--large`, `--delegate`, `--claude`, `--cached`, `--refresh`, `--save`; can reuse `.SUMMARY.md` cache or regenerate |
 | `/session` | Flags: `--resume`, `--append`, `--clear`, `--note "<text>"`; default captures a fresh snapshot and writes `.SESSION.md` |
 

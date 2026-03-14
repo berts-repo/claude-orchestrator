@@ -30,7 +30,7 @@ server.tool(
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const rows = db.prepare(
       `SELECT invocation_id, tool_type, project, cwd, prompt_slug, sandbox, approval,
-              status, failure_reason, duration_ms, started_at, stdout_bytes, token_est
+              status, failure_reason, duration_ms, started_at, stdout_bytes, response_token_est, prompt_tokens_est
        FROM tasks ${clause} ORDER BY started_at DESC LIMIT ?`
     ).all(...params, limit);
     return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
@@ -49,7 +49,7 @@ server.tool(
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
     const usage = db.prepare(
       `SELECT tool_type, sandbox, status, COUNT(*) as count,
-              AVG(duration_ms) as avg_ms, MAX(duration_ms) as max_ms, SUM(token_est) as token_sum
+              AVG(duration_ms) as avg_ms, MAX(duration_ms) as max_ms, SUM(response_token_est) as token_sum
        FROM tasks WHERE started_at > (CAST(strftime('%s','now') AS INTEGER) * 1000 - ? * 86400000)
        GROUP BY tool_type, sandbox, status`
     ).all(days);
