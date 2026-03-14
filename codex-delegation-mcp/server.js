@@ -65,6 +65,10 @@ const parsedMaxSpawns = parseInt(process.env.MAX_CODEX_SPAWNS_PER_SESSION ?? "0"
 const MAX_CODEX_SPAWNS_PER_SESSION = Number.isFinite(parsedMaxSpawns) && parsedMaxSpawns > 0 ? parsedMaxSpawns : 0; // 0 = unlimited
 let sessionSpawnCount = 0;
 
+const parsedMaxConcurrent = parseInt(process.env.MAX_CONCURRENT_CODEX_SPAWNS ?? "0", 10);
+const MAX_CONCURRENT_CODEX_SPAWNS = Number.isFinite(parsedMaxConcurrent) && parsedMaxConcurrent > 0 ? parsedMaxConcurrent : 0; // 0 = unlimited
+let activeSpawns = 0;
+
 function expandHomePath(targetPath) {
   if (targetPath === "~") return USER_HOME;
   if (targetPath.startsWith("~/")) return path.resolve(USER_HOME, targetPath.slice(2));
@@ -251,6 +255,27 @@ const ParallelSchema = z.object({
  * Resolves with { success, output, exitCode } when the process exits.
  */
 function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {}) {
+  if (MAX_CONCURRENT_CODEX_SPAWNS > 0 && activeSpawns >= MAX_CONCURRENT_CODEX_SPAWNS) {
+    const retryAfterMs = 5000;
+    return Promise.resolve({
+      index,
+      success: false,
+      output: "",
+      error: `{"error":"rate_limit","retry_after_ms":${retryAfterMs},"limit_axis":"concurrency"} [codex error: max concurrent spawns reached (${activeSpawns}/${MAX_CONCURRENT_CODEX_SPAWNS}), retry after ${retryAfterMs / 1000}s]`,
+      exitCode: -1,
+      startedAt: Date.now(),
+      finishedAt: Date.now(),
+      batchStart,
+      timedOut: false,
+      outputCapped: false,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutText: "",
+      stderrText: "",
+      spawnError: false,
+    });
+  }
+  activeSpawns++;
   return new Promise((resolve) => {
     const {
       prompt,
@@ -357,6 +382,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     });
 
     proc.on("close", (code) => {
+      activeSpawns = Math.max(0, activeSpawns - 1);
       clearTimeout(timeoutTimer);
       clearTimeout(forceKillTimer);
       const success = !timedOut && !outputCapped && code === 0;
@@ -386,6 +412,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     });
 
     proc.on("error", (err) => {
+      activeSpawns = Math.max(0, activeSpawns - 1);
       clearTimeout(timeoutTimer);
       clearTimeout(forceKillTimer);
       const redactedStdout = redactSensitiveOutput(stdout, redactValues);

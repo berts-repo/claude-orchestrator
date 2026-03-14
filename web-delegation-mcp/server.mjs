@@ -28,25 +28,41 @@ async function _readSessionId() {
 const PROVIDER = process.env.SEARCH_PROVIDER || "gemini";
 const MAX_QUERY_LENGTH = 500;
 const MAX_RESPONSE_LENGTH = 4000;
-const RATE_LIMIT_MAX = 30;
-const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? "30", 10) || 30;
+const RATE_LIMIT_TOKEN_MAX = parseInt(process.env.RATE_LIMIT_TOKEN_MAX ?? "0", 10) || 0; // 0 = unlimited
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10) || 60_000;
 
-// --- Rate limiter (in-memory, per-process) ---
+// --- Token-bucket rate limiter (sliding window, two axes: requests + estimated tokens) ---
 
 const rateLimiter = {
-  timestamps: [],
+  /** @type {{ ts: number, tokens: number }[]} */
+  entries: [],
+
   /**
-   * @description Checks whether the current request is within the configured sliding window rate limit and records the request timestamp when allowed.
-   * @returns {boolean} Returns `true` when the request is allowed and `false` when the rate limit is exceeded.
+   * Check and consume one request slot (and `tokenCost` estimated tokens).
+   * @param {number} tokenCost - Estimated token cost of this request (prompt length / 4).
+   * @returns {{ allowed: boolean, retry_after_ms: number, limit_axis: string }}
    */
-  check() {
+  check(tokenCost = 0) {
     const now = Date.now();
-    this.timestamps = this.timestamps.filter(
-      (t) => now - t < RATE_LIMIT_WINDOW_MS,
-    );
-    if (this.timestamps.length >= RATE_LIMIT_MAX) return false;
-    this.timestamps.push(now);
-    return true;
+    this.entries = this.entries.filter((e) => now - e.ts < RATE_LIMIT_WINDOW_MS);
+
+    const windowRequests = this.entries.length;
+    if (windowRequests >= RATE_LIMIT_MAX) {
+      const oldest = this.entries[0].ts;
+      return { allowed: false, retry_after_ms: RATE_LIMIT_WINDOW_MS - (now - oldest), limit_axis: "requests" };
+    }
+
+    if (RATE_LIMIT_TOKEN_MAX > 0) {
+      const windowTokens = this.entries.reduce((sum, e) => sum + e.tokens, 0);
+      if (windowTokens + tokenCost > RATE_LIMIT_TOKEN_MAX) {
+        const oldest = this.entries[0]?.ts ?? now;
+        return { allowed: false, retry_after_ms: RATE_LIMIT_WINDOW_MS - (now - oldest), limit_axis: "tokens" };
+      }
+    }
+
+    this.entries.push({ ts: now, tokens: tokenCost });
+    return { allowed: true, retry_after_ms: 0, limit_axis: null };
   },
 };
 
@@ -158,11 +174,13 @@ server.registerTool(
    * @returns {Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }>} Returns a tool result payload containing response text and optional error status.
    */
   async ({ query, max_results, provider: requestedProvider }) => {
-    // Rate limit
-    if (!rateLimiter.check()) {
-      log.warn("Rate limit exceeded");
+    // Rate limit — cost estimated from query length
+    const searchTokenCost = Math.ceil((query?.length ?? 0) / 4);
+    const rl = rateLimiter.check(searchTokenCost);
+    if (!rl.allowed) {
+      log.warn("Rate limit exceeded", { axis: rl.limit_axis, retry_after_ms: rl.retry_after_ms });
       return {
-        content: [{ type: "text", text: "[search error: rate limit exceeded, try again later]" }],
+        content: [{ type: "text", text: `{"error":"rate_limit","retry_after_ms":${rl.retry_after_ms},"limit_axis":"${rl.limit_axis}"} [search error: rate limit exceeded, retry after ${Math.ceil(rl.retry_after_ms / 1000)}s]` }],
         isError: true,
       };
     }
@@ -337,10 +355,12 @@ server.registerTool(
     },
   },
   async ({ url, format }) => {
-    if (!rateLimiter.check()) {
-      log.warn("Rate limit exceeded");
+    const fetchTokenCost = Math.ceil((url?.length ?? 0) / 4);
+    const rl = rateLimiter.check(fetchTokenCost);
+    if (!rl.allowed) {
+      log.warn("Rate limit exceeded", { axis: rl.limit_axis, retry_after_ms: rl.retry_after_ms });
       return {
-        content: [{ type: "text", text: "[fetch error: rate limit exceeded, try again later]" }],
+        content: [{ type: "text", text: `{"error":"rate_limit","retry_after_ms":${rl.retry_after_ms},"limit_axis":"${rl.limit_axis}"} [fetch error: rate limit exceeded, retry after ${Math.ceil(rl.retry_after_ms / 1000)}s]` }],
         isError: true,
       };
     }

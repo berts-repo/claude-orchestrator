@@ -62,17 +62,14 @@ Store complete prompt + response pairs per Codex task in the audit DB (currently
 
 Identified as a top gap in 2026 — current limits are request-count-based only.
 
-#### 3.1 Token-Bucket Rate Limiter Across All MCP Servers
-Replace the simple 30 req/min counter in `web-delegation-mcp` with a shared token-bucket limiter that accounts for:
-- Request count
-- Estimated token consumption
-- Number of concurrent Codex subprocesses
+#### ~~3.1 Token-Bucket Rate Limiter Across All MCP Servers~~ ✓ Done
+~~Replace the simple 30 req/min counter in `web-delegation-mcp` with a shared token-bucket limiter.~~ Implemented: sliding-window token bucket in `web-delegation-mcp/server.mjs` tracking request count (`RATE_LIMIT_MAX`) and estimated token consumption (`RATE_LIMIT_TOKEN_MAX`); configurable window via `RATE_LIMIT_WINDOW_MS`. Concurrency gate added to `codex-delegation-mcp/server.js` via `MAX_CONCURRENT_CODEX_SPAWNS` env var with `activeSpawns` counter decremented in both `close` and `error` handlers.
 
 #### ~~3.2 Per-Session Codex Spawn Cap~~ ✓ Done
 ~~Add a configurable `MAX_CODEX_SPAWNS_PER_SESSION` environment variable to `codex-delegation-mcp/server.js`.~~ Implemented: both `codex` and `codex_parallel` check against the cap before spawning. `codex_parallel` rejects early if the full batch would exceed the remaining budget. Default `0` = unlimited (no behavior change without the env var).
 
-#### 3.3 Structured `retry-after` Responses
-When any rate limit is hit, MCP tools should return a structured error with a `retry_after_ms` field instead of a hard failure. This lets Claude (or a hook) back off gracefully rather than crashing the session.
+#### ~~3.3 Structured `retry-after` Responses~~ ✓ Done
+~~Return a structured error with a `retry_after_ms` field instead of a hard failure.~~ All rate-limit responses now include a JSON prefix: `{"error":"rate_limit","retry_after_ms":N,"limit_axis":"requests"|"tokens"|"concurrency"}` followed by a human-readable message. Shipped alongside 3.1.
 
 ---
 
@@ -112,10 +109,10 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 | ~~Partial failure in `codex_parallel`~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
 | ~~Provider fallback chain (web)~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
 | ~~Prompt injection scan at delegation boundary~~ | ~~High~~ | ~~Medium~~ | ~~**P1**~~ ✓ |
-| Token-bucket rate limiter | High | Medium | **P1** |
+| ~~Token-bucket rate limiter~~ | ~~High~~ | ~~Medium~~ | ~~**P1**~~ ✓ |
 | ~~Per-session Codex spawn cap~~ | ~~Medium~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | ~~Post-task output credential scan~~ | ~~High~~ | ~~Low~~ | ~~**P1**~~ ✓ |
-| Structured `retry-after` responses | Medium | Low | **P2** |
+| ~~Structured `retry-after` responses~~ | ~~Medium~~ | ~~Low~~ | ~~**P2**~~ ✓ |
 | Prompt-level result caching | Medium | Medium | **P2** |
 | JSONL audit export | Medium | Low | **P2** |
 | SQL anomaly alert queries | Medium | Medium | **P2** |
