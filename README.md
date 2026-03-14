@@ -252,11 +252,23 @@ Global slash commands are installed to `~/.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
-| `/audit` | Query and browse the SQLite audit log (`~/.claude/audit.db`) |
-| `/direct` | Handle a task directly with Claude's built-in tools, bypassing MCP delegation; `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
-| `/report` | Generate a concise monitoring report from audit DB + security events |
-| `/summarize` | Generate project context summaries; optional cache in `.SUMMARY.md` |
-| `/session` | Capture or restore session snapshots in `.SESSION.md` |
+| `/audit` | Inspect and manage the SQLite audit DB (`~/.claude/audit.db`): status/report/log/query plus config and allowed-root management |
+| `/batches` | Retrieve recent audit batches with full task prompts/responses; defaults to the latest session |
+| `/direct` | Handle a task directly with Claude tools (no MCP delegation by default); `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
+| `/report` | Generate a monitoring report (session-scoped by default, or 7/30 day views) across tasks, batches, security events, web usage, and Claude sessions |
+| `/summarize` | Generate project context summaries with size modes/delegation options; optional cache in `.SUMMARY.md` |
+| `/session` | Capture, restore, append, clear, or annotate session snapshots in `.SESSION.md` |
+
+Key command options and defaults:
+
+| Command | Options / Behavior |
+|---|---|
+| `/audit` | Subcommands: `status`, `report [days]`, `log [N] [--list] [--codex|--web|--security] [keyword]`, `query <sql>` (SELECT-only), `set-project`, `set`, `list-projects`, `add-path`, `list-paths`, `remove-path` |
+| `/batches` | Flags: `--session <id>`, `--limit <n>` (default `5`), `--list` / `-l`; default mode resolves latest session and shows grouped batch/task output |
+| `/direct` | Parses task text plus optional `--allow <codex|web|all>`; without `--allow`, MCP codex/web tools remain blocked |
+| `/report` | Flags: `--weekly` / `-w` (last 7 days), `--monthly` / `-m` (last 30 days); default scope is current/latest session. Sections: Running Tasks, Usage Breakdown, Codex Usage by Model, Project Failure Rates, Slowest Batches, Security Events, Gemini/Web Delegations, Claude Sessions |
+| `/summarize` | Flags: `--small`, `--medium` (default), `--large`, `--delegate`, `--claude`, `--cached`, `--refresh`, `--save`; can reuse `.SUMMARY.md` cache or regenerate |
+| `/session` | Flags: `--resume`, `--append`, `--clear`, `--note "<text>"`; default captures a fresh snapshot and writes `.SESSION.md` |
 
 ```bash
 # Install/update (included in Quick Start)
