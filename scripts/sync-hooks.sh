@@ -112,7 +112,7 @@ disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json" 2>/d
 disabled_hooks_json="$(printf '%s\n' "$disabled_hooks" | jq -Rsc 'split("\n") | map(select(length > 0))')"
 
 new_hooks="$(jq -s --arg hdir "$HOOKS_LINK_DIR" --argjson disabled "$disabled_hooks_json" '
-  [ .[] | select(($disabled | index(.script)) | not) ] as $entries |
+  [ .[] | . as $h | select(($disabled | index($h.script)) | not) ] as $entries |
   [
     $entries[]
     | . as $entry
