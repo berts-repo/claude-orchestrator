@@ -119,6 +119,68 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 
 ---
 
+---
+
+## Completed Changes — Benefits & Rationale
+
+Ten improvements were shipped across four areas between 2026-03-14 and 2026-03-14. This section explains what each change actually buys.
+
+---
+
+### Security (3 changes)
+
+**Prompt injection scan at the delegation boundary (1.2)**
+
+The risk: web-fetched content or user input containing instruction-override language (`ignore previous instructions`, `you are now`, embedded `<system>` tags) could hijack what Codex actually executes. Because Codex runs with filesystem write access and a real API key, a successful injection has real consequences — not just model misbehaviour. The scan runs inside `normalizeTask()`, which is the single choke point for both `codex` and `codex_parallel`, so there is no way to reach `runCodexContainer` with an unscanned prompt. Patterns are anchored to action-verb constructions to avoid false positives on prompts that legitimately *describe* security techniques.
+
+**Post-task credential scan hook (1.4)**
+
+Codex subprocesses have read access to the workspace. If a task touches a config file, `.env`, or any file that happens to contain a secret, that secret can appear verbatim in Codex's stdout — which then flows back to Claude and into the conversation history. The hook intercepts the MCP response before Claude acts on it, scans for eleven credential patterns (AWS, GitHub PAT, OpenAI, npm, Slack, bearer tokens, private key headers, generic assignments), logs a high-severity security event to the audit DB, and emits a structured warning Claude will see before reasoning about the output. It doesn't require the secret to be intentionally exfiltrated — it fires on accidental exposure too.
+
+**Web provider fallback chain (5.1)**
+
+A single-provider design means one rate-limit or outage silently breaks all search for the session. With Gemini as primary and Brave as fallback, the search tool stays functional across provider hiccups without any user intervention. The `provider_used` field in successful responses lets Claude (and the audit log) track which backend served each result, which matters for reproducibility and debugging.
+
+---
+
+### Resilience (2 changes)
+
+**Partial failure handling in `codex_parallel` (4.3)**
+
+`Promise.all` has all-or-nothing semantics: one failing task out of five discards all five results. For long-running parallel workloads this is a significant reliability regression — the user gets nothing and has to restart everything. Switching to `Promise.allSettled` means partial results are always surfaced. Each task carries an explicit `status: "fulfilled"/"rejected"` field so Claude can decide whether to retry only the failed subset rather than the entire batch. The `X/Y tasks succeeded` summary line gives an immediate signal without requiring Claude to parse the full result array.
+
+**Structured `retry-after` responses (3.3)**
+
+Plain error strings like `"rate limit exceeded, try again later"` give Claude no actionable information. The structured JSON prefix `{"error":"rate_limit","retry_after_ms":N,"limit_axis":"requests"|"tokens"|"concurrency"}` tells Claude exactly how long to wait and which axis was hit — enabling genuine backoff rather than immediate retry loops. The `limit_axis` field is particularly useful: a `"concurrency"` limit means "wait for a running subprocess to finish", while a `"tokens"` limit means "the problem is payload size, not request count".
+
+---
+
+### Rate Limiting (2 changes)
+
+**Token-bucket rate limiter (3.1) + per-session spawn cap (3.2)**
+
+The original web server had a single request counter with no awareness of payload size. A single large Gemini search call costs many more tokens than a short one — treating them identically means the limit is either too tight for real workloads or too loose for budget control. The new two-axis limiter (request count + estimated token consumption) lets operators tune both dimensions independently via env vars.
+
+The per-session spawn cap (`MAX_CODEX_SPAWNS_PER_SESSION`) and concurrency gate (`MAX_CONCURRENT_CODEX_SPAWNS`) address a different failure mode: runaway `codex_parallel` calls that exhaust the OpenAI quota in a single session, or flood the system with more subprocesses than the machine can handle. The concurrency gate also ensures `activeSpawns` is decremented in both `close` and `error` handlers — the original code had no upper bound on simultaneous subprocesses at all.
+
+---
+
+### Observability (3 changes)
+
+**Prompt-level result caching (4.2)**
+
+Repeated exploratory `read-only` Codex calls on the same codebase are common during iterative development — running the same analysis prompt twice should not burn another subprocess, another API call, and another 30–60 seconds of wall time. The cache is keyed on `sha256(sandbox:prompt)` rather than just the prompt, so the same prompt under `workspace-write` and `read-only` are correctly treated as different (side-effect semantics differ). `danger-full-access` is excluded unconditionally because caching side-effectful results is semantically unsafe. Cache hits still write an audit row with `status: "cache-hit"` so the savings are visible in the audit trail.
+
+**JSONL audit export (2.1)**
+
+The `run_query` tool lets Claude run ad-hoc SQL, but that requires SQL knowledge and doesn't compose with external tooling. `export_jsonl` provides a stable, documented contract: pipe it to `jq`, forward it to a Datadog log drain, or load it into a local ELK stack — no SQL required. The `{"truncated":true}` sentinel on the final line makes it safe to stream large exports into pipelines that need to know whether they received the full dataset.
+
+**SQL anomaly alert queries (2.3)**
+
+Four canned queries that would otherwise require Claude (or an operator) to know the audit DB schema and write correct SQL on demand. The value is not the queries themselves — `run_query` can run them manually — it's that `get_alerts` is callable with no SQL knowledge, has sensible defaults, and returns all four alert categories in a single call. The loop-detection query (repeated identical prompt hashes) is particularly useful for catching runaway agent behaviour before it exhausts quota: it will fire before the session cap does.
+
+---
+
 ## Sources
 
 - IBM, CyCognito, Knostic — AI Agent Security 2025/2026
