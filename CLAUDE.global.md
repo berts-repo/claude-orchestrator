@@ -25,22 +25,14 @@ Always set `cwd` to an absolute path. Allowed and blocked paths come from repo-r
 | Code review / security audit | `codex` | `read-only` | `never` |
 | Refactoring | `codex` | `workspace-write` | `on-failure` |
 | Documentation generation | `codex` | `workspace-write` | `on-failure` |
-| Codebase exploration / analysis | `codex` | `read-only` | `never` |
 | Changelog / error analysis | `codex` | `read-only` | `never` |
 | Lint / format fixing | `codex` | `workspace-write` | `on-failure` |
 | Dependency audit | `codex` | `read-only` | `never` |
 | Multiple independent subtasks | `codex_parallel` | per-task | per-task |
 
-**Safety:** Default to `workspace-write`. Use `read-only` for analysis-only. Only use `danger-full-access` when explicitly requested, paired with `approval-policy: "untrusted"`. Include test/verification commands in prompts. When `git diff` exceeds 100 lines, delegate to Codex `read-only` to summarize.
+**Safety:** Default to `workspace-write`. Use `read-only` for analysis-only. Only use `danger-full-access` when explicitly requested, paired with `approval-policy: "untrusted"`. Include test/verification commands in prompts.
 
-**Prompt efficiency — prefer path references over inlined content.**
-Codex can read any file accessible within its sandbox. Use the absolute path in the prompt and instruct Codex to read it. Only inline content when:
-- The file does not exist yet (you are specifying what to create)
-- The snippet is short (< ~20 lines)
-
-Avoid embedding hundreds of lines of existing file content in a prompt.
-
-**Claude is a spec-writer, not a code-writer.** For any task in the table above, Claude's job is to write a clear Codex prompt and delegate — not to implement. Do NOT use Read, Glob, Grep, or Bash to explore files before delegating. Embed exploration instructions inside the Codex prompt instead. The default "read files before modifying" rule does not apply when the task is being delegated.
+**For code-writing and modification tasks**, write a clear Codex prompt and delegate rather than implementing directly. Codex has `cat`, `grep`, `find`, and `rg` pre-approved in AGENTS.md and can explore files within its sandbox. Do not include sensitive file paths (credentials, `.env`, `~/.codex/`, `~/.claude/`, etc.) in Codex prompts — Claude's security hooks prevent reading those paths, so they won't appear in prompts naturally.
 
 ## Adding Hooks
 
@@ -70,7 +62,6 @@ Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):
 
 | Blocked | Use Instead |
 |---------|-------------|
-| `Explore` | `mcp__delegate__codex` with `sandbox: "read-only"` |
 | `test_gen` | `mcp__delegate__codex` with `sandbox: "workspace-write"` |
 | `doc_comments` | `mcp__delegate__codex` with `sandbox: "workspace-write"` |
 | `diff_digest` | `mcp__delegate__codex` with `sandbox: "read-only"` |
