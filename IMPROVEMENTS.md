@@ -33,8 +33,8 @@ Auth is handled via Codex CLI (`~/.codex/auth.json`) rather than a raw `OPENAI_A
 - Add a pre-spawn check that validates the Codex auth token is still fresh before each subprocess call
 - Scope auth per project root so a compromised Codex subprocess cannot be reused across projects
 
-#### 1.4 Post-Task Output Scanning
-Add a `PostToolUse` hook that scans Codex subprocess responses for credential patterns (API keys, tokens, private key headers) before the output is surfaced to Claude.
+#### ~~1.4 Post-Task Output Scanning~~ ✓ Done
+~~Add a `PostToolUse` hook that scans Codex subprocess responses for credential patterns.~~ Implemented as `hooks/security--scan-codex-output.sh`: scans for AWS keys, GitHub PATs, OpenAI keys, bearer tokens, private key headers, npm/Slack tokens, and generic secret assignments. Logs a `high`-severity security event to the audit DB and emits a structured warning to Claude on detection.
 
 ---
 
@@ -68,8 +68,8 @@ Replace the simple 30 req/min counter in `web-delegation-mcp` with a shared toke
 - Estimated token consumption
 - Number of concurrent Codex subprocesses
 
-#### 3.2 Per-Session Codex Spawn Cap
-Add a configurable `MAX_CODEX_SPAWNS_PER_SESSION` environment variable to `codex-delegation-mcp/server.js`. Prevents runaway `codex_parallel` calls from exhausting the OpenAI quota.
+#### ~~3.2 Per-Session Codex Spawn Cap~~ ✓ Done
+~~Add a configurable `MAX_CODEX_SPAWNS_PER_SESSION` environment variable to `codex-delegation-mcp/server.js`.~~ Implemented: both `codex` and `codex_parallel` check against the cap before spawning. `codex_parallel` rejects early if the full batch would exceed the remaining budget. Default `0` = unlimited (no behavior change without the env var).
 
 #### 3.3 Structured `retry-after` Responses
 When any rate limit is hit, MCP tools should return a structured error with a `retry_after_ms` field instead of a hard failure. This lets Claude (or a hook) back off gracefully rather than crashing the session.
@@ -84,8 +84,8 @@ When any rate limit is hit, MCP tools should return a structured error with a `r
 #### 4.2 Prompt-Level Result Caching
 Hash each Codex prompt + sandbox mode. On a cache hit, return the stored result without spawning a subprocess. Configurable TTL. Significant savings for repeated exploratory calls (e.g., repeated `read-only` analysis of the same file set).
 
-#### 4.3 Partial Failure Handling in `codex_parallel`
-Currently, if 1 of 5 parallel tasks fails, `Promise.all` rejects and all results are lost. Switch to `Promise.allSettled` and surface partial results with per-task status (`fulfilled` / `rejected`), letting Claude decide how to proceed.
+#### ~~4.3 Partial Failure Handling in `codex_parallel`~~ ✓ Done
+~~Currently, if 1 of 5 parallel tasks fails, `Promise.all` rejects and all results are lost.~~ Switched to `Promise.allSettled`; each result carries `status: "fulfilled"/"rejected"` and the response always succeeds at the MCP level with a summary line (`X/Y tasks succeeded`).
 
 #### 4.4 Streaming Subprocess Output
 Codex subprocess output is fully buffered before being returned to Claude. Piping stdout through a streaming MCP response would improve UX on long-running tasks and allow the output cap (2 MB) to be replaced with a smarter truncation strategy.
@@ -94,8 +94,8 @@ Codex subprocess output is fully buffered before being returned to Claude. Pipin
 
 ### 5. Web Delegation
 
-#### 5.1 Provider Fallback Chain
-If the primary search provider (Gemini) fails or rate-limits, automatically retry with the secondary provider (Brave) before returning an error. Both are already registered — the fallback logic is a small addition to `web-delegation-mcp/server.mjs`.
+#### ~~5.1 Provider Fallback Chain~~ ✓ Done
+~~If the primary search provider (Gemini) fails or rate-limits, automatically retry with the secondary provider (Brave) before returning an error.~~ Implemented: Gemini→Brave fallback with `provider_used` metadata on success and structured dual-failure errors (includes both failure reasons). Cache and rate limiter preserved.
 
 #### 5.2 Content Freshness Metadata
 Surface publish dates and domain names from search results as structured metadata. This lets Claude judge recency without burning inference tokens on date extraction.
@@ -109,12 +109,12 @@ Multiple search calls in the same session frequently return overlapping URLs. De
 
 | Feature | Impact | Effort | Priority |
 |---|---|---|---|
-| Partial failure in `codex_parallel` | High | Low | **P0** |
-| Provider fallback chain (web) | High | Low | **P0** |
+| ~~Partial failure in `codex_parallel`~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
+| ~~Provider fallback chain (web)~~ | ~~High~~ | ~~Low~~ | ~~**P0**~~ ✓ |
 | Prompt injection scan at delegation boundary | High | Medium | **P1** |
 | Token-bucket rate limiter | High | Medium | **P1** |
-| Per-session Codex spawn cap | Medium | Low | **P1** |
-| Post-task output credential scan | High | Low | **P1** |
+| ~~Per-session Codex spawn cap~~ | ~~Medium~~ | ~~Low~~ | ~~**P1**~~ ✓ |
+| ~~Post-task output credential scan~~ | ~~High~~ | ~~Low~~ | ~~**P1**~~ ✓ |
 | Structured `retry-after` responses | Medium | Low | **P2** |
 | Prompt-level result caching | Medium | Medium | **P2** |
 | JSONL audit export | Medium | Low | **P2** |

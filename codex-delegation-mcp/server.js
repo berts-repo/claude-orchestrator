@@ -60,6 +60,10 @@ const DEFAULT_CONFIG = {
 const BLOCKED_HOME_DIR_NAMES = new Set([".ssh", ".gnupg", ".aws", ".config", ".local", ".cache", ".claude"]);
 const ALLOW_DANGER_SANDBOX = process.env.CODEX_ALLOW_DANGER_SANDBOX === "1";
 
+const parsedMaxSpawns = parseInt(process.env.MAX_CODEX_SPAWNS_PER_SESSION ?? "0", 10);
+const MAX_CODEX_SPAWNS_PER_SESSION = Number.isFinite(parsedMaxSpawns) && parsedMaxSpawns > 0 ? parsedMaxSpawns : 0; // 0 = unlimited
+let sessionSpawnCount = 0;
+
 function expandHomePath(targetPath) {
   if (targetPath === "~") return USER_HOME;
   if (targetPath.startsWith("~/")) return path.resolve(USER_HOME, targetPath.slice(2));
@@ -737,6 +741,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "codex") {
+    if (MAX_CODEX_SPAWNS_PER_SESSION > 0 && sessionSpawnCount >= MAX_CODEX_SPAWNS_PER_SESSION) {
+      return {
+        content: [{ type: "text", text: `[codex error: session spawn cap reached (${sessionSpawnCount}/${MAX_CODEX_SPAWNS_PER_SESSION}). Set MAX_CODEX_SPAWNS_PER_SESSION to increase the limit.]` }],
+        isError: true,
+      };
+    }
+    sessionSpawnCount++;
     const parsedTask = TaskSchema.parse(coerceArgs(args));
     const task = normalizeTask(
       {
@@ -836,7 +847,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === "codex_parallel") {
-    const { tasks } = ParallelSchema.parse(args);
+    const { tasks: rawTasks } = ParallelSchema.parse(args);
+    if (MAX_CODEX_SPAWNS_PER_SESSION > 0) {
+      const remaining = MAX_CODEX_SPAWNS_PER_SESSION - sessionSpawnCount;
+      if (remaining <= 0) {
+        return {
+          content: [{ type: "text", text: `[codex error: session spawn cap reached (${sessionSpawnCount}/${MAX_CODEX_SPAWNS_PER_SESSION}). Set MAX_CODEX_SPAWNS_PER_SESSION to increase the limit.]` }],
+          isError: true,
+        };
+      }
+      if (rawTasks.length > remaining) {
+        return {
+          content: [{ type: "text", text: `[codex error: ${rawTasks.length} tasks requested but only ${remaining} spawns remaining this session (cap: ${MAX_CODEX_SPAWNS_PER_SESSION}). Reduce task count or increase MAX_CODEX_SPAWNS_PER_SESSION.]` }],
+          isError: true,
+        };
+      }
+    }
+    sessionSpawnCount += rawTasks.length;
+    const tasks = rawTasks;
     const normalizedTasks = tasks.map((task, i) => {
       const taskWithApprovalPolicy = {
         ...task,
@@ -889,7 +917,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Fan out — all containers start immediately
-    const results = await Promise.all(
+    const settledResults = await Promise.allSettled(
       normalizedTasks.map((task, i) =>
         runCodexContainer(task, i, batchStart, {
           onStart: ({ startedAt }) => {
@@ -923,8 +951,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     );
 
     try {
-      const failedCount = results.filter((result) => !result.success).length;
-      const totalTokens = results.reduce((sum, r) => sum + Math.ceil((r.stdoutBytes ?? 0) / 4), 0);
+      const failedCount = settledResults.filter((settled) => {
+        if (settled.status === "rejected") return true;
+        return !settled.value.success;
+      }).length;
+      const totalTokens = settledResults.reduce((sum, settled) => {
+        if (settled.status === "rejected") return sum;
+        return sum + Math.ceil((settled.value.stdoutBytes ?? 0) / 4);
+      }, 0);
       completeBatch(batchId, failedCount, totalTokens);
       cleanBatchStatus(batchId);
     } catch (error) {
@@ -933,10 +967,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       clearCurrentBatchId(invocationId);
     }
 
-    const allSucceeded = results.every((r) => r.success);
+    const results = settledResults.map((settled, index) => {
+      const state = taskStates[index];
+      if (settled.status === "fulfilled") {
+        return {
+          status: "fulfilled",
+          taskIndex: index,
+          taskId: state?.invocationId ?? null,
+          ...settled.value,
+        };
+      }
+      let message;
+      if (settled.reason instanceof Error) {
+        message = settled.reason.message;
+      } else if (typeof settled.reason === "string") {
+        message = settled.reason;
+      } else {
+        try {
+          message = JSON.stringify(settled.reason);
+        } catch {
+          message = String(settled.reason);
+        }
+      }
+      return {
+        status: "rejected",
+        taskIndex: index,
+        taskId: state?.invocationId ?? null,
+        error: message || "Unknown error",
+      };
+    });
+
+    const succeededCount = results.filter((r) => r.status === "fulfilled").length;
+    const summary = `${succeededCount}/${results.length} tasks succeeded`;
     return {
-      content: [{ type: "text", text: formatParallelResults(results) }],
-      isError: !allSucceeded,
+      content: [{ type: "text", text: `${summary}\n${JSON.stringify(results, null, 2)}` }],
+      isError: false,
     };
   }
 

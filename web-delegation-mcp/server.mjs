@@ -65,6 +65,55 @@ function sanitizeSourceUrl(url) {
   }
 }
 
+function getErrorMessage(err) {
+  return sanitizeResponse(err?.message || String(err), 300);
+}
+
+function parseProviderErrorResponse(result) {
+  if (!result || typeof result !== "object") {
+    return "provider returned an invalid response";
+  }
+
+  if (typeof result.error === "string" && result.error.trim()) {
+    return sanitizeResponse(result.error.trim(), 300);
+  }
+
+  if (typeof result.error?.message === "string" && result.error.message.trim()) {
+    return sanitizeResponse(result.error.message.trim(), 300);
+  }
+
+  if (result.rate_limited === true || result.rateLimited === true) {
+    return "rate limit exceeded";
+  }
+
+  if (typeof result.status === "number" && result.status >= 400) {
+    return `request failed with status ${result.status}`;
+  }
+
+  return null;
+}
+
+function mapErrorMessageToUserMessage(message) {
+  const normalizedMessage = String(message || "").toLowerCase();
+  if (normalizedMessage.includes("api_key") || normalizedMessage.includes("api key")) {
+    return "[search error: authentication failed]";
+  }
+  if (normalizedMessage.includes("429") || normalizedMessage.includes("quota") || normalizedMessage.includes("rate")) {
+    return "[search error: rate limit exceeded, try again later]";
+  }
+  if (
+    normalizedMessage.includes("timeout")
+    || normalizedMessage.includes("aborted")
+    || normalizedMessage.includes("deadline")
+  ) {
+    return "[search error: request timed out]";
+  }
+  if (normalizedMessage.includes("safety") || normalizedMessage.includes("blocked")) {
+    return "[search error: query blocked by safety filters]";
+  }
+  return `[search error: ${message.slice(0, 200)}]`;
+}
+
 // --- Initialize provider ---
 
 let provider;
@@ -158,83 +207,123 @@ server.registerTool(
     log.info("search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
 
     const _searchT0 = Date.now();
-    try {
-      const { summary, sources, notice } = await activeProvider.search(cleanQuery, max_results);
+    const providerName = activeProvider.getName();
+    const providersToTry = [activeProvider];
+    const failures = [];
 
-      const cleanSummary = sanitizeResponse(summary, MAX_RESPONSE_LENGTH);
-      const cleanSources = (Array.isArray(sources) ? sources : [])
-        .map((source) => ({
-          title: sanitizeSourceTitle(source?.title),
-          url: sanitizeSourceUrl(source?.url),
-        }))
-        .filter((source) => Boolean(source.url));
-      const sourcesBlock = cleanSources.length > 0
-        ? "\n\nSources:\n" + cleanSources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join("\n")
-        : "";
-
-      const output = [
-        ...(notice ? [notice, ""] : []),
-        `[Provider: ${activeProvider.getName()}]`,
-        "--- BEGIN UNTRUSTED WEB CONTENT ---",
-        "",
-        cleanSummary,
-        sourcesBlock,
-        "",
-        "--- END UNTRUSTED WEB CONTENT ---",
-      ].join("\n");
-
-      log.info("search completed", {
-        query: cleanQuery.slice(0, 60),
-        responseLength: cleanSummary.length,
-        sourceCount: cleanSources.length,
-      });
-
-      const result = { content: [{ type: "text", text: output }] };
-
-      // Cache successful results
-      cache.set(cacheKey, result);
-
+    if (providerName === "gemini") {
       try {
-        const _duration = Date.now() - _searchT0;
-        const _sessionId = await _readSessionId();
-        if (_auditDb?.insertTask) {
-          _auditDb.insertTask({
-            tool_type: "web-search",
-            session_id: _sessionId,
-            prompt_slug: cleanQuery.slice(0, 80),
-            status: "done",
-            started_at: Date.now() - _duration,
-            ended_at: Date.now(),
-            duration_ms: _duration,
-            stdout_bytes: output.length,
-            output_truncated: 0,
-          });
+        const braveFallback = getProvider("brave");
+        providersToTry.push(braveFallback);
+      } catch (err) {
+        failures.push({ provider: "brave", reason: getErrorMessage(err) });
+      }
+    }
+
+    let providerResult;
+    let providerUsed;
+
+    for (const currentProvider of providersToTry) {
+      const currentProviderName = currentProvider.getName();
+      try {
+        const result = await currentProvider.search(cleanQuery, max_results);
+        const responseFailure = parseProviderErrorResponse(result);
+        if (responseFailure) {
+          failures.push({ provider: currentProviderName, reason: responseFailure });
+          continue;
         }
-      } catch {}
+        providerResult = result;
+        providerUsed = currentProviderName;
+        break;
+      } catch (err) {
+        failures.push({ provider: currentProviderName, reason: getErrorMessage(err) });
+      }
+    }
 
-      return result;
-    } catch (err) {
-      const message = err?.message || String(err);
-      log.error("search failed", { error: message });
+    if (!providerResult || !providerUsed) {
+      const structuredFailure = failures.reduce((acc, failure) => {
+        if (!acc[failure.provider]) {
+          acc[failure.provider] = failure.reason;
+        }
+        return acc;
+      }, {});
+      const combinedFailureMessage = Object.values(structuredFailure).join(" | ");
+      const summaryMessage = mapErrorMessageToUserMessage(combinedFailureMessage);
+      const failureProviders = Object.keys(structuredFailure);
+      log.error("search failed", { failures: structuredFailure });
 
-      let userMessage;
-      if (message.includes("API_KEY")) {
-        userMessage = "[search error: authentication failed]";
-      } else if (message.includes("429") || message.includes("quota") || message.includes("rate")) {
-        userMessage = "[search error: rate limit exceeded, try again later]";
-      } else if (message.includes("timeout") || message.includes("aborted") || message.includes("DEADLINE")) {
-        userMessage = "[search error: request timed out]";
-      } else if (message.includes("SAFETY") || message.includes("blocked")) {
-        userMessage = "[search error: query blocked by safety filters]";
-      } else {
-        userMessage = `[search error: ${message.slice(0, 200)}]`;
+      if (failureProviders.length < 2) {
+        return {
+          content: [{ type: "text", text: summaryMessage }],
+          isError: true,
+        };
       }
 
       return {
-        content: [{ type: "text", text: userMessage }],
+        content: [{ type: "text", text: `${summaryMessage} ${JSON.stringify(structuredFailure)}` }],
         isError: true,
+        metadata: { provider_failures: structuredFailure },
       };
     }
+
+    const { summary, sources, notice } = providerResult;
+
+    const cleanSummary = sanitizeResponse(summary, MAX_RESPONSE_LENGTH);
+    const cleanSources = (Array.isArray(sources) ? sources : [])
+      .map((source) => ({
+        title: sanitizeSourceTitle(source?.title),
+        url: sanitizeSourceUrl(source?.url),
+      }))
+      .filter((source) => Boolean(source.url));
+    const sourcesBlock = cleanSources.length > 0
+      ? "\n\nSources:\n" + cleanSources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join("\n")
+      : "";
+
+    const output = [
+      ...(notice ? [notice, ""] : []),
+      `[Provider: ${providerUsed}]`,
+      "--- BEGIN UNTRUSTED WEB CONTENT ---",
+      "",
+      cleanSummary,
+      sourcesBlock,
+      "",
+      "--- END UNTRUSTED WEB CONTENT ---",
+    ].join("\n");
+
+    log.info("search completed", {
+      query: cleanQuery.slice(0, 60),
+      provider: providerUsed,
+      responseLength: cleanSummary.length,
+      sourceCount: cleanSources.length,
+    });
+
+    const result = {
+      content: [{ type: "text", text: output }],
+      metadata: { provider_used: providerUsed },
+    };
+
+    // Cache successful results
+    cache.set(cacheKey, result);
+
+    try {
+      const _duration = Date.now() - _searchT0;
+      const _sessionId = await _readSessionId();
+      if (_auditDb?.insertTask) {
+        _auditDb.insertTask({
+          tool_type: "web-search",
+          session_id: _sessionId,
+          prompt_slug: cleanQuery.slice(0, 80),
+          status: "done",
+          started_at: Date.now() - _duration,
+          ended_at: Date.now(),
+          duration_ms: _duration,
+          stdout_bytes: output.length,
+          output_truncated: 0,
+        });
+      }
+    } catch {}
+
+    return result;
   },
 );
 
