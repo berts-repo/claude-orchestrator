@@ -57,6 +57,16 @@ for file in "${md_files[@]}"; do
   dst="$DST_DIR/$name"
 
   if echo "$disabled_cmds" | grep -qxF "$(basename "$file")"; then
+    if [[ -L "$dst" ]]; then
+      if $CHECK_ONLY; then
+        echo "  Disabled (symlink present): $(basename "$file")"
+      elif $DRY_RUN; then
+        echo "  WOULD unlink disabled command: $(basename "$file")"
+      else
+        rm "$dst"
+        echo "  Unlinked disabled command: $(basename "$file")"
+      fi
+    fi
     echo "  Skipping (disabled in config.json): $(basename "$file")"
     continue
   fi

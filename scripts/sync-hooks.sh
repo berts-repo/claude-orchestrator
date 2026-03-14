@@ -108,8 +108,11 @@ done
 echo
 [[ ${#hook_scripts[@]} -gt 0 ]] || die "no hooks discovered (all scripts were marked as helpers?)"
 
-new_hooks="$(jq -s --arg hdir "$HOOKS_LINK_DIR" '
-  . as $entries |
+disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json" 2>/dev/null || true)"
+disabled_hooks_json="$(printf '%s\n' "$disabled_hooks" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+
+new_hooks="$(jq -s --arg hdir "$HOOKS_LINK_DIR" --argjson disabled "$disabled_hooks_json" '
+  [ .[] | select(($disabled | index(.script)) | not) ] as $entries |
   [
     $entries[]
     | . as $entry
@@ -151,8 +154,6 @@ if $CHECK_ONLY; then
   exit 0
 fi
 
-disabled_hooks="$(jq -r '(.hooks.disabled // [])[]' "$REPO_DIR/config.json" 2>/dev/null || true)"
-
 # ── Step 1: Symlinks ──────────────────────────────────────────────────────────
 
 echo "--- symlinks ---"
@@ -163,6 +164,14 @@ for script in "${hook_scripts[@]}"; do
   dst="$HOOKS_LINK_DIR/$script"
 
   if echo "$disabled_hooks" | grep -qxF "$(basename "$script")"; then
+    if [[ -L "$dst" ]]; then
+      if $DRY_RUN; then
+        echo "  WOULD remove disabled symlink: $(basename "$script")"
+      else
+        rm -f "$dst"
+        echo "  remove $(basename "$script") (disabled)"
+      fi
+    fi
     echo "  Skipping (disabled in config.json): $(basename "$script")"
     continue
   fi
