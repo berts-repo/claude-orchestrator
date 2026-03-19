@@ -18,21 +18,24 @@ Each call spawns an independent `codex exec` process. `codex_parallel` fans out 
 
 Always set `cwd` to an absolute path. Allowed and blocked paths come from repo-root `config.json` (machine-local, gitignored), extended by `CODEX_POOL_ALLOWED_CWD_ROOTS` in the delegate MCP env. `scripts/setup.sh` auto-creates `config.json` from `config.example.json` if missing. Use `/audit list-paths` and `/audit add-path <absolute-path>` to manage env roots.
 
-| Task Type | Tool | Sandbox | Approval Policy |
-|-----------|------|---------|-----------------|
-| Code generation | `codex` | `workspace-write` | `on-failure` |
-| Test generation | `codex` | `workspace-write` | `on-failure` |
-| Code review / security audit | `codex` | `read-only` | `never` |
-| Refactoring | `codex` | `workspace-write` | `on-failure` |
-| Documentation generation | `codex` | `workspace-write` | `on-failure` |
-| Changelog / error analysis | `codex` | `read-only` | `never` |
-| Lint / format fixing | `codex` | `workspace-write` | `on-failure` |
-| Dependency audit | `codex` | `read-only` | `never` |
-| Multiple independent subtasks | `codex_parallel` | per-task | per-task |
+| Task Type | Tool | Sandbox | Approval Policy | Complexity |
+|-----------|------|---------|-----------------|------------|
+| Code generation | `codex` | `workspace-write` | `on-failure` | `standard` |
+| Test generation | `codex` | `workspace-write` | `on-failure` | `standard` |
+| Code review / security audit | `codex` | `read-only` | `never` | `light` |
+| Refactoring | `codex` | `workspace-write` | `on-failure` | `standard` |
+| Documentation generation | `codex` | `workspace-write` | `on-failure` | `light` |
+| Changelog / error analysis | `codex` | `read-only` | `never` | `light` |
+| Lint / format fixing | `codex` | `workspace-write` | `on-failure` | `light` |
+| Dependency audit | `codex` | `read-only` | `never` | `light` |
+| Complex multi-file reasoning | `codex` | `workspace-write` | `on-failure` | `heavy` |
+| Multiple independent subtasks | `codex_parallel` | per-task | per-task | per-task |
 
 **Safety:** Default to `workspace-write`. Use `read-only` for analysis-only. Only use `danger-full-access` when explicitly requested, paired with `approval-policy: "untrusted"`. Include test/verification commands in prompts.
 
 **For code-writing and modification tasks**, write a clear Codex prompt and delegate rather than implementing directly. Codex has `cat`, `grep`, `find`, and `rg` pre-approved in AGENTS.md and can explore files within its sandbox. Do not include sensitive file paths (credentials, `.env`, `~/.codex/`, `~/.claude/`, etc.) in Codex prompts — Claude's security hooks prevent reading those paths, so they won't appear in prompts naturally.
+
+**Prompt discipline:** When delegating to Codex, do not paste file contents inline. Give Codex the file path and let it read with `cat`/`rg`. Reserve inline content for short snippets under 50 lines or for files that do not yet exist.
 
 ## Adding Hooks
 

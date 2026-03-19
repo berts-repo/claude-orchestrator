@@ -47,9 +47,10 @@ import {
 } from "../audit-mcp/db.js";
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
-const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 300000; // 5 min
+const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 600000; // 10 min
 const FORCE_KILL_DELAY_MS = 5000;
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 200 * 1024; // ~200 KB — stay under Claude Code's MCP result token limit
+const PARALLEL_TASK_MAX_OUTPUT = 20000; // 20 KB per task in codex_parallel responses
 const USER_HOME = toCanonicalPath(path.resolve(process.env.HOME ?? homedir()));
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.resolve(MODULE_DIR, "../config.json");
@@ -150,8 +151,8 @@ function toPromptHash(prompt) {
   return createHash("sha256").update(prompt).digest("hex");
 }
 
-function toPromptCacheKey(prompt, sandbox) {
-  return createHash("sha256").update(`${sandbox}:${prompt}`).digest("hex");
+function toPromptCacheKey(prompt, sandbox, model) {
+  return createHash("sha256").update(`${sandbox}:${model ?? ""}:${prompt}`).digest("hex");
 }
 
 function cacheGet(key) {
@@ -252,9 +253,11 @@ const ApprovalPolicy = z.enum(["untrusted", "on-failure", "on-request", "never"]
 const TaskSchema = z.object({
   prompt: z.string().min(1).max(50000).describe("The task prompt for Codex"),
   cwd: z.string().min(1).describe("Absolute path to the working directory to mount"),
+  timeout_ms: z.number().positive().optional(),
   sandbox: SandboxMode.default("workspace-write"),
   "approval-policy": ApprovalPolicy.default("on-failure").describe("When Codex must ask for approval"),
   model: z.string().optional().describe("Model override (e.g. 'o4-mini')"),
+  complexity: z.enum(["light", "standard", "heavy"]).optional().describe("Task complexity hint; maps to a model when 'model' is not set"),
   "base-instructions": z.string().max(20000).optional().describe("Override system instructions"),
   "skip-git-repo-check": z.boolean().optional().describe("Pass --skip-git-repo-check to codex exec"),
 });
@@ -314,11 +317,14 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     const codexBin = process.env.CODEX_BIN ?? "codex";
     const shouldSkipGitRepoCheck = task["skip-git-repo-check"] || !isGitRepository(cwd);
 
+    const COMPLEXITY_MODEL_MAP = { light: "o4-mini", heavy: "o3" };
+    const resolvedModel = model ?? (task.complexity ? COMPLEXITY_MODEL_MAP[task.complexity] : undefined);
+
     const codexArgs = [
       "exec", "--ephemeral",
       "-s", sandbox,
       ...(approvalPolicy ? ["-c", `approval_policy=${approvalPolicy}`] : []),
-      ...(model ? ["-m", model] : []),
+      ...(resolvedModel ? ["-m", resolvedModel] : []),
       ...(baseInstructions ? ["-c", `instructions=${JSON.stringify(baseInstructions)}`] : []),
       ...(shouldSkipGitRepoCheck ? ["--skip-git-repo-check"] : []),
       prompt,
@@ -369,10 +375,11 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
         }, FORCE_KILL_DELAY_MS);
       }
     };
+    const effectiveTimeout = task.timeout_ms ?? DEFAULT_TIMEOUT_MS;
     const timeoutTimer = setTimeout(() => {
       timedOut = true;
       terminateProcess();
-    }, DEFAULT_TIMEOUT_MS);
+    }, effectiveTimeout);
 
     proc.stdout.on("data", (chunk) => {
       if (stdoutBytes < MAX_OUTPUT_BYTES) {
@@ -415,7 +422,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
         success,
         output: redactedStdout.trim(),
         error: timedOut
-          ? `Timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`
+          ? `Timed out after ${effectiveTimeout / 1000}s`
           : outputCapped
             ? `Output exceeded ${MAX_OUTPUT_BYTES} bytes and process was terminated`
           : redactedStderr.trim() || undefined,
@@ -510,8 +517,8 @@ const PROMPT_INJECTION_PATTERNS = [
   /\[SYSTEM\]/,
   /###\s*system/i,
 
-  // Shell command injection in prompt text (backticks, $() expansion, heredoc abuse)
-  /`[^`]{1,200}`/,          // backtick command substitution
+  // Shell command injection in prompt text ($() expansion, heredoc abuse)
+  // Backtick pattern removed — too many false positives on inline code references in prompts
   /\$\([^)]{1,200}\)/,      // $() substitution
   /;\s*(?:rm|curl|wget|nc|bash|sh|python|node|eval)\b/i,
 
@@ -615,6 +622,12 @@ function formatParallelResults(results) {
     })
     .join("\n\n---\n\n");
   return header + "\n" + body;
+}
+
+function truncateParallelTaskField(value, label) {
+  if (typeof value !== "string" || value.length <= PARALLEL_TASK_MAX_OUTPUT) return value;
+  const truncatedChars = value.length - PARALLEL_TASK_MAX_OUTPUT;
+  return `${value.slice(0, PARALLEL_TASK_MAX_OUTPUT)}\n[${label} truncated: ${truncatedChars} chars to ${PARALLEL_TASK_MAX_OUTPUT}]`;
 }
 
 function buildTaskRecord(task, state, overrides) {
@@ -762,6 +775,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           prompt: { type: "string", description: "Task prompt for Codex" },
           cwd: { type: "string", description: "Absolute path to working directory" },
+          timeout_ms: {
+            type: "number",
+            description: "Timeout in milliseconds for this task. Overrides the server default (600000).",
+          },
           sandbox: {
             type: "string",
             enum: ["read-only", "workspace-write", "danger-full-access"],
@@ -801,6 +818,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               properties: {
                 prompt: { type: "string" },
                 cwd: { type: "string" },
+                timeout_ms: {
+                  type: "number",
+                  description: "Timeout in milliseconds for this task. Overrides the server default (600000).",
+                },
                 sandbox: {
                   type: "string",
                   enum: ["read-only", "workspace-write", "danger-full-access"],
@@ -849,7 +870,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     );
     // Cache check — skip for danger-full-access (side-effectful)
     if (task.sandbox !== "danger-full-access") {
-      const cacheKey = toPromptCacheKey(task.prompt, task.sandbox);
+      const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, task.model);
       const cached = cacheGet(cacheKey);
       if (cached) {
         try {
@@ -971,7 +992,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (result.success && task.sandbox !== "danger-full-access") {
-      cacheSet(toPromptCacheKey(task.prompt, task.sandbox), result);
+      cacheSet(toPromptCacheKey(task.prompt, task.sandbox, task.model), result);
     }
 
     return {
@@ -1057,7 +1078,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Cache check per task (skip danger-full-access)
         if (task.sandbox !== "danger-full-access") {
-          const cacheKey = toPromptCacheKey(task.prompt, task.sandbox);
+          const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, task.model);
           const cached = cacheGet(cacheKey);
           if (cached) {
             const now = Date.now();
@@ -1094,7 +1115,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           state.durationMs = result.finishedAt - state.startedAt;
 
           if (result.success && task.sandbox !== "danger-full-access") {
-            cacheSet(toPromptCacheKey(task.prompt, task.sandbox), result);
+            cacheSet(toPromptCacheKey(task.prompt, task.sandbox, task.model), result);
           }
 
           try {
@@ -1128,11 +1149,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const results = settledResults.map((settled, index) => {
       const state = taskStates[index];
       if (settled.status === "fulfilled") {
+        const result = {
+          ...settled.value,
+          output: truncateParallelTaskField(settled.value.output, "output"),
+          stdoutText: truncateParallelTaskField(settled.value.stdoutText, "output"),
+          error: truncateParallelTaskField(settled.value.error, "error"),
+          stderrText: truncateParallelTaskField(settled.value.stderrText, "stderr"),
+        };
         return {
           status: "fulfilled",
           taskIndex: index,
           taskId: state?.invocationId ?? null,
-          ...settled.value,
+          ...result,
         };
       }
       let message;

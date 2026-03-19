@@ -122,6 +122,26 @@ Report: total blocks by hook, severity distribution, most frequent patterns, any
 
 ---
 
+### Output Size Distribution
+
+```sql
+SELECT
+  sandbox,
+  COUNT(*) as tasks,
+  CAST(AVG(response_token_est) AS INTEGER) as avg_tokens,
+  CAST(MAX(response_token_est) AS INTEGER) as max_tokens,
+  SUM(CASE WHEN output_truncated IS NOT NULL THEN 1 ELSE 0 END) as truncated_count
+FROM tasks
+WHERE tool_type = 'codex'
+  AND <scope>
+GROUP BY sandbox
+ORDER BY avg_tokens DESC
+```
+
+Report: average and max output size per sandbox, number of truncated responses. Use this to assess whether the 2 MB output cap is too tight or appropriately set.
+
+---
+
 ### Gemini / Web Delegations
 
 ```sql
@@ -173,7 +193,8 @@ Produce a concise markdown report with these sections in order:
 4. Project Failure Rates
 5. Slowest Batches
 6. Security Events
-7. Gemini / Web Delegations
-8. Claude Sessions
+7. Output Size Distribution
+8. Gemini / Web Delegations
+9. Claude Sessions
 
 Label the report header with the scope: **Session `<first 8 chars>`**, **Last 7 Days**, or **Last 30 Days**.
