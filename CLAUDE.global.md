@@ -1,5 +1,9 @@
 # Agent Orchestration — Claude Code MCP Bridge
 
+## Session Context
+
+If `.SESSION.md` exists at the project root, read it at the start of each session for context on recent work, in-progress state, and next steps.
+
 ## Rules
 
 1. **Explicit intent only.** Never invoke `search` unless the user explicitly requests web access.

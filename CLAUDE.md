@@ -101,6 +101,10 @@ Hook naming convention: `<prefix>--<purpose>.sh`
 | `~/.claude/settings.local.json` | Tool permissions (allow/deny/ask) |
 | `~/.claude/CLAUDE.md` | Session instructions (installed/updated from `CLAUDE.global.md` by `scripts/setup.sh`) |
 
+## Session Context
+
+If `.SESSION.md` exists at the repo root, read it at the start of each session for context on recent work, in-progress state, and next steps.
+
 ## Key Constraints
 
 - Primary branch is `main`

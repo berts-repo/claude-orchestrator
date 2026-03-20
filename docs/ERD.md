@@ -74,8 +74,8 @@ Dashed annotation `- - →` denotes soft links (plain `TEXT` columns with no DB-
 ║ • prompt_full_days (D:7)    → Nulls `tasks.prompt`            ║      ║ color       TEXT     ║
 ║ • output_days (D:3)         → Nulls `tasks.output_truncated`  ║      ╚══════════════════════╝
 ║ • output_full_days (D:3)    → Nulls `tasks.output_full`       ║
-║ • row_days (D:365)          → Deletes old rows                ║      ╔══════════════════════╗
-║ • max_prompt_chars (D:4000) → Max chars stored in `prompt`    ║
+║ • row_days (D:365)          → Deletes old rows                ║
+║ • max_prompt_chars (D:4000) → Max chars stored in `prompt`    ║      ╔══════════════════════╗
 ║ • max_db_mb (D:100)         → Trims oldest tasks if > limit   ║      ║        CONFIG        ║
 ╚═══════════════════════════════════════════════════════════════╝      ╠══════════════════════╣
                                                                        ║ key        TEXT (PK) ║
@@ -142,7 +142,7 @@ Dashed annotation `- - →` denotes soft links (plain `TEXT` columns with no DB-
 
 - **Redaction** — `prompt`, `output_truncated`, `output_full`, `error_text` are scanned for secrets before storage; `redaction_count` tracks hits.
 - **Token estimation** — `prompt_tokens_est` / `response_token_est` use `chars / 4` (no external tokenizer).
-- **`output_full`** — added by migration (`ALTER TABLE tasks ADD COLUMN output_full TEXT`); not in the original `CREATE TABLE`.
+- **`output_full`** — added to `tasks` by migration (`ALTER TABLE tasks ADD COLUMN output_full TEXT`); present in `web_tasks` `CREATE TABLE` directly (also backfilled via migration for existing DBs).
 - **Tool types** — common values: `codex`, `web-search`, `web-fetch`, `audit`.
 - **Sandbox modes** — `read-only`, `workspace-write`, `danger-full-access`.
 - **Data lifecycle** — `runRetentionCleanup()` runs on startup; nulls content columns after N days, deletes rows after `row_days`, and emergency-trims oldest 500 tasks if DB exceeds `max_db_mb`.

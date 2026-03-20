@@ -4,6 +4,16 @@ Ideas and future improvements for claude-orchestrator. Items marked `[maybe]` ar
 
 ---
 
+## [action] Clean up stale Codex test artifacts on all machines
+
+On each machine running claude-orchestrator, remove the leftover `.db-test-module-*` temp dirs that Codex leaves behind (already gitignored, harmless but noisy):
+
+```bash
+rm -rf codex-delegation-mcp/.db-test-module-*
+```
+
+---
+
 ## [maybe] Prompt cache hit rate in /report
 
 Surface Codex prompt cache hits in the audit DB and show hit rate + tokens saved in `/report`.
