@@ -253,7 +253,7 @@ Global slash commands are installed to `~/.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
-| `/audit` | Inspect and manage the SQLite audit DB (`~/.claude/audit.db`): status/report/log/query plus config and allowed-root management |
+| `/audit` | Inspect and manage the SQLite audit DB (`~/.claude/audit.db`): status/query/export plus config and allowed-root management |
 | `/history` | Retrieve recent audit batch history with full task prompts/responses and per-task/per-batch token-estimate totals; defaults to the latest session |
 | `/direct` | Handle a task directly with Claude tools (no MCP delegation by default); `--allow codex`, `--allow web`, or `--allow all` selectively re-enable MCPs |
 | `/report` | Generate a monitoring report (session-scoped by default, or 7/30 day views) across tasks, batches, security events, web usage, and Claude sessions, including token-estimate usage sections |
@@ -264,7 +264,7 @@ Key command options and defaults:
 
 | Command | Options / Behavior |
 |---|---|
-| `/audit` | Subcommands: `status`, `report [days]`, `log [N] [--list] [--codex|--web|--security] [keyword]`, `query <sql>` (SELECT-only), `set-project`, `set`, `list-projects`, `add-path`, `list-paths`, `remove-path` |
+| `/audit` | Subcommands: `set <key> <value>`, `status`, `query <sql> [--to-file]` (SELECT-only), `export [--days N] [--table tasks\|security_events\|web_tasks]`, `add-path <path>`, `list-paths`, `remove-path <path>` |
 | `/history` | Flags: `--session <id>`, `--limit <n>` (default `5`), `--list` / `-l`; default mode resolves latest session and shows grouped batch/task output with per-task/per-batch token-estimate totals |
 | `/direct` | Parses task text plus optional `--allow <codex|web|all>`; without `--allow`, MCP codex/web tools remain blocked |
 | `/report` | Flags: `--weekly` / `-w` (last 7 days), `--monthly` / `-m` (last 30 days); default scope is current/latest session. Sections: Running Tasks, Usage Breakdown, Codex Usage by Model, Project Failure Rates, Slowest Batches, Security Events, Gemini/Web Delegations, Claude Sessions (Usage Breakdown and Codex Usage by Model include `prompt_tokens_est`/`response_token_est` totals) |

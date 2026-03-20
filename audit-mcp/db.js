@@ -655,15 +655,6 @@ export function autoTag(taskId, promptSlug, sandbox) {
   }
 }
 
-export function shouldStoreFullPrompt(project) {
-  if (process.env.AUDIT_LOG_PROMPTS === "1") return true;
-  if (getConfig("full_prompt_storage", "false") === "true") return true;
-  if (getConfig(`full_prompt_project:${project}`, "false") === "true") return true;
-  if (getConfig(`prompt_storage_project:${project}`, "slug-only") === "full") return true;
-  if (getConfig("prompt_storage", "slug-only") === "full") return true;
-  return false;
-}
-
 export function shouldStoreFullOutput(project) {
   if (process.env.AUDIT_LOG_OUTPUT === "1") return true;
   if (getConfig("full_output_storage", "false") === "true") return true;

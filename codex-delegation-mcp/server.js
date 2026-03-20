@@ -40,7 +40,6 @@ import {
   insertTask,
   redact,
   shouldStoreFullOutput,
-  shouldStoreFullPrompt,
   updateTask,
   upsertSession,
   writeBatchStatus,
@@ -731,11 +730,9 @@ function buildStoredOutputs(result, promptText, project, promptCap) {
   let outputFullValue = null;
   let errorText = null;
 
-  if (failed || shouldStoreFullPrompt(project)) {
-    const redacted = redact(promptText.slice(0, promptCap));
-    promptValue = redacted.text;
-    redactionCount += redacted.count;
-  }
+  const redactedPrompt = redact(promptText.slice(0, promptCap));
+  promptValue = redactedPrompt.text;
+  redactionCount += redactedPrompt.count;
 
   const redactedOutput = redact(toStoredOutput(result));
   const outputValue = redactedOutput.text;

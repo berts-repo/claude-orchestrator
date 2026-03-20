@@ -98,7 +98,6 @@ server.tool(
 
 const ALLOWED_CONFIG_KEYS = new Set([
   "full_output_storage",
-  "full_prompt_storage",
   "prompt_full_days",
   "output_days",
   "output_full_days",
@@ -108,14 +107,14 @@ const ALLOWED_CONFIG_KEYS = new Set([
 
 server.tool(
   "set_config",
-  "Write a config value to the audit DB. Only an allowlisted set of keys is accepted, plus key patterns prompt_storage_project:<name> and allowed_root:<path>.",
+  "Write a config value to the audit DB. Only an allowlisted set of keys is accepted, plus key pattern allowed_root:<path>.",
   {
     key: z.string(),
     value: z.string(),
   },
   async ({ key, value }) => {
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
-    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^prompt_storage_project:.+$/.test(key) && !/^allowed_root:.+$/.test(key)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^allowed_root:.+$/.test(key)) {
       return {
         content: [{ type: "text", text: `Error: key '${key}' is not in the allowed config keys list` }],
         isError: true,
@@ -139,7 +138,7 @@ server.tool(
   },
   async ({ key }) => {
     if (!db) return { content: [{ type: "text", text: "DB not available" }] };
-    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^prompt_storage_project:.+$/.test(key) && !/^allowed_root:.+$/.test(key)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key) && !/^allowed_root:.+$/.test(key)) {
       return {
         content: [{ type: "text", text: `Error: key '${key}' is not in the allowed config keys list` }],
         isError: true,

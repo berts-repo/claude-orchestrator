@@ -8,7 +8,9 @@
 #   db-read.sh search <keyword> [limit]
 #
 # Validates all inputs before touching sqlite3. Exits non-zero on bad input.
-# On success, writes output to /tmp/audit-*.json (or .txt for view) and prints the path.
+# On success, writes output to a temp file and prints the path.
+#   view   → /tmp/codex-output-<batch_id>-<task_index>.txt
+#   others → /tmp/audit-*.json
 
 set -euo pipefail
 
@@ -58,7 +60,7 @@ case "$subcommand" in
     is_integer "$task_index"            || die "task_index must be a non-negative integer"
 
     require_sqlite3
-    out="/tmp/codex-output.txt"
+    out="/tmp/codex-output-${batch_id}-${task_index}.txt"
     sqlite3 "$DB" \
       "SELECT output_full FROM tasks WHERE batch_id = '$(sql_escape "$batch_id")' AND task_index = ${task_index}" \
       > "$out"
@@ -150,19 +152,37 @@ PYEOF
     out="/tmp/history-search.json"
     escaped_kw="$(sql_escape "$keyword")"
     task_limit=$(( limit * 5 ))
+    tasks_tmp="/tmp/history-search-tasks-$$.json"
+    web_tasks_tmp="/tmp/history-search-web-tasks-$$.json"
+    trap 'rm -f "$tasks_tmp" "$web_tasks_tmp"' EXIT
 
     sqlite3 -json "$DB" \
       "SELECT b.session_id, b.started_at, t.batch_id, t.task_index, t.prompt_slug,
               t.output_truncated, t.status, t.duration_ms, t.error_text
        FROM batches b JOIN tasks t ON t.batch_id = b.id
        WHERE t.prompt LIKE '%${escaped_kw}%' OR t.prompt_slug LIKE '%${escaped_kw}%'
-       ORDER BY b.started_at DESC LIMIT ${task_limit}" > "$out"
+       ORDER BY b.started_at DESC LIMIT ${task_limit}" > "$tasks_tmp"
 
     sqlite3 -json "$DB" \
       "SELECT id, session_id, tool_name, prompt, status, started_at, duration_ms, error_text
        FROM web_tasks
        WHERE prompt LIKE '%${escaped_kw}%'
-       ORDER BY started_at DESC LIMIT ${task_limit}" >> "$out"
+       ORDER BY started_at DESC LIMIT ${task_limit}" > "$web_tasks_tmp"
+
+    python3 - "$tasks_tmp" "$web_tasks_tmp" "$out" <<'PYEOF'
+import json
+import sys
+
+tasks_path, web_tasks_path, out_path = sys.argv[1:4]
+
+def load_json(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        content = f.read().strip()
+    return json.loads(content) if content else []
+
+with open(out_path, 'w', encoding='utf-8') as f:
+    json.dump(load_json(tasks_path) + load_json(web_tasks_path), f)
+PYEOF
 
     echo "$out"
     ;;

@@ -1,8 +1,6 @@
 Inspect and manage the audit DB.
 
 Parse `$ARGUMENTS` as one of these subcommands:
-- `set-project <name> prompt-storage <full|slug-only>`
-- `list-projects`
 - `set <key> <value>`
 - `status`
 - `query <sql> [--to-file]`
@@ -38,17 +36,8 @@ For `export [--days <n>] [--table tasks|security_events|web_tasks]`:
   The script validates the table allowlist and days range, exits non-zero on failure. On success it prints the output file path.
 - Print: `Exported <table> (last <days> days) to <path>`
 
-For `set-project <name> prompt-storage <full|slug-only>`:
-- Map values: `full` → `"full"`, `slug-only` → `"slug-only"`
-- Call `mcp__audit__set_config` with `key = "prompt_storage_project:<name>"` and `value`.
-
-For `list-projects`:
-- Call `mcp__audit__run_query` with:
-  `SELECT replace(key, 'prompt_storage_project:', '') as project, value as prompt_storage FROM config WHERE key LIKE 'prompt_storage_project:%' ORDER BY project`
-- Show columns: `project`, `prompt_storage`.
-
 For `set <key> <value>`:
-- Allowed keys: `prompt-full-days`, `output-days`, `output-full-days`, `row-days`, `max-db-mb`, `full-output-storage`, `full-prompt-storage`.
+- Allowed keys: `prompt-full-days`, `output-days`, `output-full-days`, `row-days`, `max-db-mb`, `full-output-storage`.
 - Map to DB config keys:
   - `prompt-full-days` → `prompt_full_days`
   - `output-days` → `output_days`
@@ -56,7 +45,6 @@ For `set <key> <value>`:
   - `row-days` → `row_days`
   - `max-db-mb` → `max_db_mb`
   - `full-output-storage` → `full_output_storage`
-  - `full-prompt-storage` → `full_prompt_storage`
 - Call `mcp__audit__set_config` with the mapped key and value.
 
 For `status`:

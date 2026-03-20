@@ -6,7 +6,7 @@ Parse `$ARGUMENTS` for optional flags:
 - `-<N>` (e.g. `-1`, `-2`, `-3`) — shorthand for the last N tasks; `-1` shows the single most recent task, `-2` the last two, etc. Equivalent to `--limit <N>` but sorts output newest-first and skips the batch header grouping — show each task as a flat entry.
 - `--search <keyword>` — search across ALL sessions by prompt content
 - `--list` / `-l` — list available sessions
-- `--view <batch_id> [task_index]` — open the full output of a specific task in `$PAGER` (bypasses MCP token limits by querying SQLite directly)
+- `--view <batch_id> [task_index]` — display the full output of a specific task inline (bypasses MCP token limits by querying SQLite directly)
 
 Argument rules:
 - If `$ARGUMENTS` contains a token matching `-[0-9]+` (e.g. `-1`, `-10`), extract the absolute value as `<N>` and treat as shorthand mode (newest-N).
@@ -24,13 +24,13 @@ Run:
 bash scripts/db-read.sh view <batch_id> <task_index>
 ```
 
-The script validates inputs and exits non-zero with an error message on failure. On success it prints the output file path. Print that path to the user.
+The script validates inputs and exits non-zero with an error message on failure. On success it prints the output file path. Read that file with the Read tool and display its contents inline.
 
 ---
 
 ## If shorthand `-<N>` mode
 
-Resolve session as in the default mode. Then fetch the N most recent Codex batches and N most recent web tasks for that session, merge by `started_at` descending, take the top N entries total. Use the standard Output format (with batch grouping) but sorted newest-first.
+Resolve session as in the default mode. Then fetch the N most recent Codex batches and N most recent web tasks for that session, merge by `started_at` descending, take the top N entries total. Show each task as a flat entry (no batch header), newest-first.
 
 **Codex batches (fetch tasks for the N most recent batches):**
 
@@ -42,28 +42,28 @@ ORDER BY started_at DESC
 LIMIT <N>
 ```
 
-Step 2 — fetch all tasks for those batches (omit `output_full` to stay within MCP token limits):
+Step 2 — fetch all tasks for those batches:
 ```sql
 SELECT b.id as batch_id, b.session_id, b.started_at, b.task_count, b.failed_count,
-       t.task_index, t.prompt, t.output_truncated, t.status, t.duration_ms,
+       t.task_index, t.prompt, t.status, t.duration_ms,
        t.prompt_tokens_est, t.response_token_est, t.error_text
 FROM batches b JOIN tasks t ON t.batch_id = b.id
 WHERE b.id IN (<batch_ids>)
 ORDER BY b.started_at DESC, t.task_index
 ```
 
-For each task, show `output_truncated` if non-null, otherwise *(use `/history --view <batch_id> <task_index>` for full output)*.
+For each task's output: run `bash scripts/db-read.sh view <batch_id> <task_index>`, then read the returned file path with the Read tool and display its contents inline under **Output:**.
 
 **Web tasks:**
 ```sql
-SELECT id, session_id, tool_name, prompt, status, started_at, ended_at, duration_ms, error_text
+SELECT id, session_id, tool_name, prompt, output_full, status, started_at, ended_at, duration_ms, error_text
 FROM web_tasks
 WHERE session_id = '<session_id>'
 ORDER BY started_at DESC
 LIMIT <N>
 ```
 
-Merge Codex batches and web tasks into a single timeline sorted newest-first. Use the standard Output format. Web task output is omitted from this view — use `/audit query` if needed.
+Merge Codex batches and web tasks into a single timeline sorted newest-first. Use the standard Output format.
 
 ---
 
@@ -94,7 +94,7 @@ LIMIT <limit * 5>
 
 **Web tasks:**
 ```sql
-SELECT id, session_id, tool_name, prompt, status, started_at, ended_at, duration_ms, error_text
+SELECT id, session_id, tool_name, prompt, output_full, status, started_at, ended_at, duration_ms, error_text
 FROM web_tasks
 WHERE prompt LIKE '%<keyword>%'
 ORDER BY started_at DESC
@@ -138,7 +138,7 @@ LIMIT <limit * 20>
 
 **Web tasks:**
 ```sql
-SELECT id, session_id, tool_name, prompt, status, started_at, ended_at, duration_ms, error_text
+SELECT id, session_id, tool_name, prompt, output_full, status, started_at, ended_at, duration_ms, error_text
 FROM web_tasks
 WHERE session_id = '<session_id>'
 ORDER BY started_at DESC
@@ -173,4 +173,4 @@ If both queries return no rows, print: `No history found for session <session_id
 
 Output requirements:
 - Plain markdown, clear separators between entries.
-- Full prompt and output — do not truncate.
+- Full prompt — do not truncate. For `-N` and `--view` modes, output is fetched in full via db-read.sh. For default and search modes, `output_truncated` is shown as a preview with a `--view` hint.
