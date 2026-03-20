@@ -5,8 +5,6 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `list-projects`
 - `set <key> <value>`
 - `status`
-- `report [days]`
-- `log [N] [--list] [--codex|--web|--security] [keyword]`
 - `query <sql>`
 - `add-path <path>`
 - `list-paths`
@@ -14,10 +12,9 @@ Parse `$ARGUMENTS` as one of these subcommands:
 
 Use `mcp__audit__*` tools for all DB access. Do NOT use `sqlite3` shell commands.
 
-For DB-backed subcommands (`set-project`, `list-projects`, `set`, `status`, `report`, `log`, `query`):
-- If the audit MCP server is unavailable, print:
+If the audit MCP server is unavailable, print:
   `Audit MCP server not available — restart Claude Code to register audit.`
-- Then stop.
+Then stop.
 
 For `query <sql>`:
 - Only allow read-only `SELECT` statements.
@@ -48,54 +45,6 @@ For `set <key> <value>`:
 For `status`:
 - Call `mcp__audit__get_status` (no params).
 - Display config values, row counts per table (including `security_events` and `web_tasks`), and DB file size.
-- Include an "Example Queries" section with helpful hints:
-  - Project history this week: `get_tasks` with `project=<name>`
-  - Failure rate by project: `get_report` with default days
-  - Slowest parallel batches: `get_report`
-  - Recall by prompt slug keyword: `get_tasks` with `keyword=<term>`
-
-For `report [days]`:
-- Defaults: `days = 7`.
-- If `days` is provided, parse it as a positive integer (1-365). If invalid, print: `Error: days must be an integer between 1 and 365.` and stop.
-- Call `mcp__audit__get_report` with `days`.
-- Display sections from the response: `usage`, `failures`, `slowest_batches`, and `running`.
-
-For `log [N] [--list] [--codex|--web|--security] [keyword]`:
-- Defaults: `N = 10`, no type filter, no keyword filter, full mode (not `--list`).
-- Parse args in this order:
-  - First positional integer → `N` (limit)
-  - `--codex` → `tool_type = "codex"`
-  - `--web` → query `web_tasks` via `mcp__audit__run_query`:
-    `SELECT id, tool_name, status, prompt, datetime(started_at/1000,'unixepoch') as started, duration_ms
-     FROM web_tasks
-     ORDER BY started_at DESC
-     LIMIT <N>`
-  - `--security` → query `security_events` via `mcp__audit__run_query`:
-    `SELECT id, datetime(timestamp_ms/1000,'unixepoch') as ts, hook, tool, severity, pattern_matched, command_preview
-     FROM security_events
-     ORDER BY timestamp_ms DESC
-     LIMIT <N>`
-  - `--list` → list mode
-  - First non-flag, non-integer positional token → `keyword`
-- Call `mcp__audit__get_tasks` with appropriate `limit`, `tool_type`, `keyword` params.
-- For `--web` and `--security`, use the SQL query paths above instead of `get_tasks`.
-
-For `log --security [N]`:
-- Query `security_events` via `mcp__audit__run_query`:
-  `SELECT id, datetime(timestamp_ms/1000,'unixepoch') as ts, hook, tool, severity, pattern_matched, command_preview
-   FROM security_events
-   ORDER BY timestamp_ms DESC
-   LIMIT <N>`
-
-- Full mode output: for each row render:
-  - Header: `[N] <type> · <sandbox> · <duration>ms · <timestamp> · <cwd>`
-  - `PROMPT` section: `prompt` if non-null/non-empty, else `prompt_slug`
-  - `RESPONSE` section: `output_full` if non-null/non-empty, else `output_truncated`
-  - If no rows: `No matching audit tasks found.`
-
-- `--list` mode: markdown table with columns:
-  `# | timestamp | type | sandbox | status | duration | prompt_slug`
-  - If no rows: `No matching audit tasks found.`
 
 For `list-paths`:
 - Run `mcp__audit__run_query` with:
