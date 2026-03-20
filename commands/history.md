@@ -1,9 +1,9 @@
-Retrieve recent audit batches with full task prompts and responses.
+Retrieve recent audit history — Codex batches and web (Gemini) searches — for the current or specified session.
 
 Parse `$ARGUMENTS` for optional flags:
 - `--session <id>`
 - `--limit <n>` (default `5`)
-- `--list` / `-l` — list available sessions instead of showing batches
+- `--list` / `-l` — list available sessions instead of showing history
 
 Argument rules:
 - If `--limit` is missing, use `5`.
@@ -26,30 +26,39 @@ If `--session` is not provided:
 - If no row is returned, print: `No batches found in audit DB.` and stop.
 - Use the returned `session_id` for the next query.
 
-Then call `mcp__audit__run_query` with:
+Run both of the following queries in parallel using the resolved `session_id`:
+
+**Codex tasks query:**
 `SELECT b.id as batch_id, b.started_at, b.task_count, b.failed_count, t.task_index, t.prompt, t.output_full, t.status, t.duration_ms, t.exit_code, t.prompt_tokens_est, t.response_token_est FROM batches b JOIN tasks t ON t.batch_id = b.id WHERE b.session_id = '<session_id>' ORDER BY b.started_at DESC, t.task_index LIMIT <n * 20>`
+
+**Web tasks query:**
+`SELECT id, tool_name, prompt, status, started_at, ended_at, duration_ms, error_text FROM web_tasks WHERE session_id = '<session_id>' ORDER BY started_at DESC LIMIT <n * 10>`
 
 Replace:
 - `<session_id>` with the resolved session id
 - `<n * 20>` with `--limit * 20`
+- `<n * 10>` with `--limit * 10`
 
-Present results grouped by batch, ordered by `started_at DESC`:
-- Batch header includes:
-  - `batch_id` shortened to first 8 chars
-  - `started_at`
-  - status summary derived from batch fields (include `task_count` and `failed_count`)
-  - token totals across batch tasks as `tokens: 847p / 312r`
-- Under each batch, list every task row with:
+Merge all results from both queries into a single timeline sorted by `started_at` ascending (oldest first, latest last). Use a clear type label for each entry:
+
+**For Codex batches** — group tasks under a batch header:
+- Batch header: `## [CODEX] Batch <batch_id first 8 chars> — <started_at> — <task_count> tasks, <failed_count> failed — tokens: <sum prompt_tokens_est>p / <sum response_token_est>r`
+- Under each batch, list every task with:
   - `task_index`
   - `prompt` (full)
-  - `output_full` (full)
+  - `output_full` (full, or `output_truncated` if `output_full` is null)
   - `status`
   - `duration_ms`
-  - `prompt_tokens_est` and `response_token_est` as `tokens: 13 → 8` (prompt → response)
+  - `tokens: <prompt_tokens_est> → <response_token_est>`
 
-If the batch/task query returns no rows, print: `No batches found for session <session_id>.`
+**For web tasks** — one entry per row:
+- Header: `## [WEB] <tool_name> — <started_at> — <status> — <duration_ms>ms`
+- `prompt` (full)
+- `error_text` if present
+
+If both queries return no rows, print: `No history found for session <session_id>.`
 
 Output requirements:
 - Plain markdown.
 - Keep full `prompt` and full `output_full` content (do not truncate).
-- Use clear batch separators so tasks are visually grouped under their batch.
+- Use clear separators so entries are visually distinct.

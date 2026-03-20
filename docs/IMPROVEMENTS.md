@@ -9,7 +9,7 @@
 | Server | Directory | Purpose |
 |---|---|---|
 | `delegate` | `codex-delegation-mcp/` | Spawns parallel `codex exec --ephemeral` subprocesses for code tasks |
-| `delegate-web` | `web-delegation-mcp/` | Web search + URL fetch via Gemini/Brave with SSRF protection |
+| `delegate-web` | `web-delegation-mcp/` | Web search + URL fetch via Gemini with SSRF protection |
 | `audit` | `audit-mcp/` | SQLite audit DB — logs all tool calls, token estimates, sessions |
 
 The hook system (`hooks/*.sh`) enforces security at the shell level and is synced to `~/.claude/settings.json` via `scripts/sync.sh`. The core design philosophy is: **Claude writes specs and delegates — it never directly reads/writes code for tasks that Codex can handle**, saving 90–97% tokens.
@@ -87,8 +87,8 @@ Codex subprocess output is fully buffered before being returned to Claude. Pipin
 
 ### 5. Web Delegation
 
-#### ~~5.1 Provider Fallback Chain~~ ✓ Done
-~~If the primary search provider (Gemini) fails or rate-limits, automatically retry with the secondary provider (Brave) before returning an error.~~ Implemented: Gemini→Brave fallback with `provider_used` metadata on success and structured dual-failure errors (includes both failure reasons). Cache and rate limiter preserved.
+#### 5.1 Provider Fallback Chain
+Removed — Brave provider removed. Gemini is the sole search provider.
 
 #### 5.2 Content Freshness Metadata
 Surface publish dates and domain names from search results as structured metadata. This lets Claude judge recency without burning inference tokens on date extraction.
@@ -136,10 +136,6 @@ The risk: web-fetched content or user input containing instruction-override lang
 **Post-task credential scan hook (1.4)**
 
 Codex subprocesses have read access to the workspace. If a task touches a config file, `.env`, or any file that happens to contain a secret, that secret can appear verbatim in Codex's stdout — which then flows back to Claude and into the conversation history. The hook intercepts the MCP response before Claude acts on it, scans for eleven credential patterns (AWS, GitHub PAT, OpenAI, npm, Slack, bearer tokens, private key headers, generic assignments), logs a high-severity security event to the audit DB, and emits a structured warning Claude will see before reasoning about the output. It doesn't require the secret to be intentionally exfiltrated — it fires on accidental exposure too.
-
-**Web provider fallback chain (5.1)**
-
-A single-provider design means one rate-limit or outage silently breaks all search for the session. With Gemini as primary and Brave as fallback, the search tool stays functional across provider hiccups without any user intervention. The `provider_used` field in successful responses lets Claude (and the audit log) track which backend served each result, which matters for reproducibility and debugging.
 
 ---
 

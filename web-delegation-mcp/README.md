@@ -1,6 +1,6 @@
 # Web Delegation MCP Server
 
-MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Default search provider: Gemini API with Google Search grounding (`SEARCH_PROVIDER=gemini`), with optional Brave support.
+MCP server (registered as `delegate-web`) exposing `search` and `fetch` tools. Search provider: Gemini API with Google Search grounding.
 
 ## Overview
 
@@ -102,8 +102,7 @@ web-delegation-mcp/
 └── providers/
     ├── index.mjs                # Provider factory
     ├── base-provider.mjs        # Abstract base class
-    ├── gemini-provider.mjs      # Gemini + Google Search implementation
-    └── brave-provider.mjs       # Brave Search API implementation
+    └── gemini-provider.mjs      # Gemini + Google Search implementation
 ../hooks/                        # All hooks consolidated (runtime at ~/.claude/hooks/)
     ├── web--inject-web-search-hint.sh
     ├── security--restrict-bash-network.sh
@@ -244,7 +243,7 @@ Search the web for the latest news about AI
 What should happen:
 1. The `web--inject-web-search-hint.sh` hook detects "search the web" and injects context
 2. Claude calls the `search` MCP tool
-3. The MCP server queries the active provider (`gemini` by default, or `brave` when configured)
+3. The MCP server queries the Gemini provider
 4. Claude receives the results wrapped in `--- BEGIN/END UNTRUSTED WEB CONTENT ---` markers
 5. Claude synthesizes an answer and cites sources with URLs
 6. For time-sensitive prompts, `web--preempt-recency-queries.sh` injects a pre-inference search hint
@@ -321,7 +320,7 @@ Search the web and return grounded results with source URLs.
 **Parameters:**
 - `query` (string, required): Search query. Max 500 characters.
 - `max_results` (integer, optional): Number of sources to return. 1-10, default 5.
-- `provider` (`"gemini"` | `"brave"`, optional): Override the active search provider for this call. Defaults to the provider set by `SEARCH_PROVIDER` env var (default: `gemini`).
+- `provider` (`"gemini"`, optional): Search provider. Only `gemini` is supported.
 
 **Returns:** Markdown text with a summary paragraph and source URLs, wrapped in untrust markers.
 
@@ -428,8 +427,7 @@ Returns the active server configuration: the current provider name and all avail
 {
   "activeProvider": "gemini",
   "availableProviders": [
-    { "name": "gemini", "available": true },
-    { "name": "brave", "available": false }
+    { "name": "gemini", "available": true }
   ],
   "tools": ["search", "fetch"]
 }
@@ -446,10 +444,8 @@ Returns the active server configuration: the current provider name and all avail
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GEMINI_API_KEY` | (required for gemini) | Google Gemini API key |
-| `BRAVE_API_KEY` | (required for brave) | Brave Search API key |
+| `GEMINI_API_KEY` | (required) | Google Gemini API key |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
-| `SEARCH_PROVIDER` | `gemini` | Provider to use (`gemini` or `brave`) |
 | `LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
 | `CACHE_ENABLED` | `true` | Set to `false` to disable caching |
 
@@ -463,9 +459,6 @@ The launcher checks three sources in order. Make sure at least one is set:
 ```bash
 # Check environment variable
 echo $GEMINI_API_KEY
-
-# If using Brave provider:
-echo $BRAVE_API_KEY
 
 # Check GNOME Keyring (Linux only)
 secret-tool lookup service mcp-delegate-web account api-key

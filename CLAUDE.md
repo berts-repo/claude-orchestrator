@@ -45,7 +45,7 @@ cd web-delegation-mcp && node test-security.mjs
 
 ```
 Claude Code (orchestrator)
-  ├── delegate-web MCP      (web-delegation-mcp/server.mjs) ─── Web API (Gemini/Brave/…)
+  ├── delegate-web MCP      (web-delegation-mcp/server.mjs) ─── Web API (Gemini)
   ├── codex-delegation MCP  (codex-delegation-mcp/server.js)  ─── codex exec subprocesses
   └── audit MCP             (audit-mcp/server.js) ─── SQLite audit DB (~/.claude/audit.db)
 ```

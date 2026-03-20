@@ -163,7 +163,7 @@ server.registerTool(
         .min(1)
         .max(10)
         .default(5),
-      provider: z.enum(["gemini", "brave"]).optional(),
+      provider: z.enum(["gemini"]).optional(),
     },
   },
   /**
@@ -225,62 +225,33 @@ server.registerTool(
     log.info("search called", { query: cleanQuery.slice(0, 100), max_results, provider: activeProvider.getName() });
 
     const _searchT0 = Date.now();
-    const providerName = activeProvider.getName();
-    const providersToTry = [activeProvider];
-    const failures = [];
-
-    if (providerName === "gemini") {
-      try {
-        const braveFallback = getProvider("brave");
-        providersToTry.push(braveFallback);
-      } catch (err) {
-        failures.push({ provider: "brave", reason: getErrorMessage(err) });
-      }
-    }
-
+    const providerUsed = activeProvider.getName();
     let providerResult;
-    let providerUsed;
 
-    for (const currentProvider of providersToTry) {
-      const currentProviderName = currentProvider.getName();
-      try {
-        const result = await currentProvider.search(cleanQuery, max_results);
-        const responseFailure = parseProviderErrorResponse(result);
-        if (responseFailure) {
-          failures.push({ provider: currentProviderName, reason: responseFailure });
-          continue;
-        }
-        providerResult = result;
-        providerUsed = currentProviderName;
-        break;
-      } catch (err) {
-        failures.push({ provider: currentProviderName, reason: getErrorMessage(err) });
-      }
-    }
-
-    if (!providerResult || !providerUsed) {
-      const structuredFailure = failures.reduce((acc, failure) => {
-        if (!acc[failure.provider]) {
-          acc[failure.provider] = failure.reason;
-        }
-        return acc;
-      }, {});
-      const combinedFailureMessage = Object.values(structuredFailure).join(" | ");
-      const summaryMessage = mapErrorMessageToUserMessage(combinedFailureMessage);
-      const failureProviders = Object.keys(structuredFailure);
-      log.error("search failed", { failures: structuredFailure });
-
-      if (failureProviders.length < 2) {
+    try {
+      const result = await activeProvider.search(cleanQuery, max_results);
+      const responseFailure = parseProviderErrorResponse(result);
+      if (responseFailure) {
+        log.error("search failed", { provider: providerUsed, reason: responseFailure });
         return {
-          content: [{ type: "text", text: summaryMessage }],
+          content: [{ type: "text", text: mapErrorMessageToUserMessage(responseFailure) }],
           isError: true,
         };
       }
-
+      providerResult = result;
+    } catch (err) {
+      const reason = getErrorMessage(err);
+      log.error("search failed", { provider: providerUsed, reason });
       return {
-        content: [{ type: "text", text: `${summaryMessage} ${JSON.stringify(structuredFailure)}` }],
+        content: [{ type: "text", text: mapErrorMessageToUserMessage(reason) }],
         isError: true,
-        metadata: { provider_failures: structuredFailure },
+      };
+    }
+
+    if (!providerResult) {
+      return {
+        content: [{ type: "text", text: "[search error: no result returned]" }],
+        isError: true,
       };
     }
 
