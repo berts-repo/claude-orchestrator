@@ -5,21 +5,43 @@ Parse `$ARGUMENTS` as one of these subcommands:
 - `list-projects`
 - `set <key> <value>`
 - `status`
-- `query <sql>`
+- `query <sql> [--to-file]`
+- `export [--days <n>] [--table tasks|security_events|web_tasks]`
 - `add-path <path>`
 - `list-paths`
 - `remove-path <path>`
 
-Use `mcp__audit__*` tools for all DB access. Do NOT use `sqlite3` shell commands.
+Use `mcp__audit__*` tools for all DB access. Exception: `query --to-file` and `export` use `sqlite3` directly to bypass MCP token limits for large results.
 
 If the audit MCP server is unavailable, print:
   `Audit MCP server not available — restart Claude Code to register audit.`
 Then stop.
 
-For `query <sql>`:
+For `query <sql> [--to-file]`:
 - Only allow read-only `SELECT` statements.
 - Reject anything else with: `Only SELECT queries are allowed.`
-- Use `mcp__audit__run_query` with the provided `sql`.
+- If `--to-file` is present: run this Bash command and print the output path:
+  ```bash
+  sqlite3 -json ~/.claude/audit.db "<sql>" > /tmp/audit-query.json && echo "Saved to /tmp/audit-query.json"
+  ```
+  Then stop — do not display the file contents.
+- Otherwise: use `mcp__audit__run_query` with the provided `sql`.
+
+For `export [--days <n>] [--table tasks|security_events|web_tasks]`:
+- `--days` defaults to `7`. `--table` defaults to `tasks`.
+- For `tasks` table:
+  ```bash
+  sqlite3 -json ~/.claude/audit.db "SELECT * FROM tasks WHERE started_at > (strftime('%s','now','-<days> days') * 1000) ORDER BY started_at DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
+  ```
+- For `security_events` table:
+  ```bash
+  sqlite3 -json ~/.claude/audit.db "SELECT * FROM security_events WHERE timestamp_ms > (strftime('%s','now','-<days> days') * 1000) ORDER BY timestamp_ms DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
+  ```
+- For `web_tasks` table:
+  ```bash
+  sqlite3 -json ~/.claude/audit.db "SELECT * FROM web_tasks WHERE started_at > (strftime('%s','now','-<days> days') * 1000) ORDER BY started_at DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
+  ```
+- Print: `Exported <table> (last <days> days) to /tmp/audit-export.json`
 
 For `set-project <name> prompt-storage <full|slug-only>`:
 - Map values: `full` → `"full"`, `slug-only` → `"slug-only"`

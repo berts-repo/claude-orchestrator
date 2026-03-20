@@ -75,6 +75,7 @@ Dashed annotation `- - →` denotes soft links (plain `TEXT` columns with no DB-
 ║ • output_days (D:3)         → Nulls `tasks.output_truncated`  ║      ╚══════════════════════╝
 ║ • output_full_days (D:3)    → Nulls `tasks.output_full`       ║
 ║ • row_days (D:365)          → Deletes old rows                ║      ╔══════════════════════╗
+║ • max_prompt_chars (D:4000) → Max chars stored in `prompt`    ║
 ║ • max_db_mb (D:100)         → Trims oldest tasks if > limit   ║      ║        CONFIG        ║
 ╚═══════════════════════════════════════════════════════════════╝      ╠══════════════════════╣
                                                                        ║ key        TEXT (PK) ║
@@ -97,6 +98,8 @@ Dashed annotation `- - →` denotes soft links (plain `TEXT` columns with no DB-
 ║ command_preview TEXT         ║           ║ duration_ms    INTEGER         ║
 ║ cwd             TEXT         ║           ║ error_text     TEXT            ║
 ╚══════════════════════════════╝           ║ cwd            TEXT            ║
+                                           ║ output_full    TEXT            ║
+                                           ║ prompt_tokens_est INTEGER      ║
                                            ╚════════════════════════════════╝
 ```
 

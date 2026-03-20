@@ -60,7 +60,6 @@ else
 fi
 
 output_full="$(echo "$payload" | jq -r '.tool_response.content // "" | if type == "array" then .[0].text // "" else . end')"
-output_full="${output_full:0:4000}"
 prompt_tokens_est=$(( ${#prompt} / 4 ))
 
 DB="${HOME}/.claude/audit.db"
