@@ -24,7 +24,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import { readFileSync, realpathSync } from "fs";
-import { get_encoding } from "js-tiktoken";
+import { getEncoding } from "js-tiktoken";
 import { homedir } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -51,7 +51,7 @@ let _enc = null;
 function countTokens(text) {
   if (!text) return 0;
   try {
-    if (!_enc) _enc = get_encoding("cl100k_base");
+    if (!_enc) _enc = getEncoding("cl100k_base");
     return _enc.encode(String(text)).length;
   } catch {
     return Math.ceil(String(text).length / 4);
