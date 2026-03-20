@@ -295,6 +295,7 @@ const TaskSchema = z.object({
   complexity: z.enum(["light", "standard", "heavy"]).optional().describe("Task complexity hint; maps to a model when 'model' is not set"),
   "base-instructions": z.string().max(20000).optional().describe("Override system instructions"),
   "skip-git-repo-check": z.boolean().optional().describe("Pass --skip-git-repo-check to codex exec"),
+  "summary_only": z.boolean().optional().describe("Return a compact summary (status, files_changed, error) instead of raw stdout. Use for fire-and-forget write tasks where Claude will verify via git diff."),
 });
 
 const ParallelSchema = z.object({
@@ -553,7 +554,7 @@ const PROMPT_INJECTION_PATTERNS = [
 
   // Shell command injection in prompt text ($() expansion, heredoc abuse)
   // Backtick pattern removed — too many false positives on inline code references in prompts
-  /\$\([^)]{1,200}\)/,      // $() substitution
+  /\$\(\s*(?:curl|wget|nc|bash|sh|eval|python3?|node|ruby|perl)\b/i,  // shell execution in $() substitution
   /;\s*(?:rm|curl|wget|nc|bash|sh|python|node|eval)\b/i,
 
   // Credential / exfiltration instructions
@@ -656,6 +657,28 @@ function formatParallelResults(results) {
     })
     .join("\n\n---\n\n");
   return header + "\n" + body;
+}
+
+function buildSummaryResult(result, cwd) {
+  let filesChanged = [];
+  try {
+    const gitOut = spawnSync("git", ["diff", "--name-only", "HEAD"], { cwd, encoding: "utf8", timeout: 5000 });
+    if (gitOut.status === 0 && gitOut.stdout) {
+      filesChanged = gitOut.stdout.trim().split("\n").filter(Boolean);
+    }
+    const gitStaged = spawnSync("git", ["diff", "--name-only", "--cached"], { cwd, encoding: "utf8", timeout: 5000 });
+    if (gitStaged.status === 0 && gitStaged.stdout) {
+      const staged = gitStaged.stdout.trim().split("\n").filter(Boolean);
+      filesChanged = [...new Set([...filesChanged, ...staged])];
+    }
+  } catch {}
+  const firstError = result.stderrText?.split("\n").find((l) => l.trim()) ?? null;
+  return {
+    status: result.success ? "success" : "failed",
+    exit_code: result.exitCode,
+    files_changed: filesChanged,
+    error: result.success ? null : (firstError ?? result.error ?? null),
+  };
 }
 
 function truncateParallelTaskField(value, label) {
@@ -834,6 +857,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "boolean",
             description: "Pass --skip-git-repo-check to codex exec; use when cwd is not a git repo",
           },
+          "summary_only": {
+            type: "boolean",
+            description: "Return a compact summary (status, files_changed, error) instead of raw stdout. Use for fire-and-forget write tasks where Claude will verify via git diff.",
+          },
         },
         required: ["prompt", "cwd"],
       },
@@ -875,6 +902,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 "skip-git-repo-check": {
                   type: "boolean",
                   description: "Pass --skip-git-repo-check to codex exec; use when cwd is not a git repo",
+                },
+                "summary_only": {
+                  type: "boolean",
+                  description: "Return a compact summary (status, files_changed, error) instead of raw stdout. Use for fire-and-forget write tasks where Claude will verify via git diff.",
                 },
               },
               required: ["prompt", "cwd"],
@@ -1054,6 +1085,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       cacheSet(toPromptCacheKey(task.prompt, task.sandbox, resolveTaskModel(task)), result);
     }
 
+    if (task.summary_only) {
+      return {
+        content: [{ type: "text", text: JSON.stringify(buildSummaryResult(result, task.cwd), null, 2) }],
+        isError: !result.success,
+      };
+    }
     return {
       content: [{ type: "text", text: formatResult(result) }],
       isError: !result.success,
@@ -1212,7 +1249,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const results = settledResults.map((settled, index) => {
       const state = taskStates[index];
+      const sourceTask = normalizedTasks[index];
       if (settled.status === "fulfilled") {
+        if (sourceTask?.summary_only) {
+          return {
+            status: "fulfilled",
+            taskIndex: index,
+            taskId: state?.invocationId ?? null,
+            summary: buildSummaryResult(settled.value, sourceTask.cwd),
+          };
+        }
         const result = {
           ...settled.value,
           output: truncateParallelTaskField(settled.value.output, "output"),
