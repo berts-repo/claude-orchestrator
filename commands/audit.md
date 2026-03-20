@@ -21,31 +21,22 @@ For `query <sql> [--to-file]`:
 - Only allow read-only `SELECT` statements.
 - Reject anything else with: `Only SELECT queries are allowed.`
 - If `--to-file` is present:
-  - Reject if `sql` contains `;` outside of a string literal (multiple statements), shell metacharacters (backticks, `$()`, unescaped `\`), or any non-SELECT DML/DDL keyword (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `CREATE`, `ALTER`, `ATTACH`). Print: `Error: unsafe SQL rejected.` and stop.
-  - Escape any single quotes in `sql` by doubling them (`'` → `''`) before shell embedding.
   - Run:
     ```bash
-    sqlite3 -json ~/.claude/audit.db "<sql>" > /tmp/audit-query.json && echo "Saved to /tmp/audit-query.json"
+    bash scripts/db-read.sh query <sql>
     ```
+  - The script validates SELECT-only, blocks unsafe keywords and shell metacharacters, and exits non-zero with an error on failure. On success it prints the output file path.
   - Then stop — do not display the file contents.
 - Otherwise: use `mcp__audit__run_query` with the provided `sql`.
 
 For `export [--days <n>] [--table tasks|security_events|web_tasks]`:
 - `--days` defaults to `7`. `--table` defaults to `tasks`.
-- **Validate before running:** `--days` must be a positive integer (1–365). `--table` must be exactly one of `tasks`, `security_events`, `web_tasks`. Reject anything else with: `Error: invalid argument.` and stop.
-- For `tasks` table:
+- Run:
   ```bash
-  sqlite3 -json ~/.claude/audit.db "SELECT * FROM tasks WHERE started_at > (strftime('%s','now','-<days> days') * 1000) ORDER BY started_at DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
+  bash scripts/db-read.sh export --table <table> --days <days>
   ```
-- For `security_events` table:
-  ```bash
-  sqlite3 -json ~/.claude/audit.db "SELECT * FROM security_events WHERE timestamp_ms > (strftime('%s','now','-<days> days') * 1000) ORDER BY timestamp_ms DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
-  ```
-- For `web_tasks` table:
-  ```bash
-  sqlite3 -json ~/.claude/audit.db "SELECT * FROM web_tasks WHERE started_at > (strftime('%s','now','-<days> days') * 1000) ORDER BY started_at DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"
-  ```
-- Print: `Exported <table> (last <days> days) to /tmp/audit-export.json`
+  The script validates the table allowlist and days range, exits non-zero on failure. On success it prints the output file path.
+- Print: `Exported <table> (last <days> days) to <path>`
 
 For `set-project <name> prompt-storage <full|slug-only>`:
 - Map values: `full` → `"full"`, `slug-only` → `"slug-only"`
