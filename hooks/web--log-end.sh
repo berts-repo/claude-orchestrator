@@ -59,7 +59,11 @@ else
   error_text=""
 fi
 
+output_full="$(echo "$payload" | jq -r '.tool_response.content // "" | if type == "array" then .[0].text // "" else . end')"
+output_full="${output_full:0:4000}"
+prompt_tokens_est=$(( ${#prompt} / 4 ))
+
 DB="${HOME}/.claude/audit.db"
-sqlite3 "$DB" "UPDATE web_tasks SET status='$(sql_escape "$status")', ended_at=${epoch_ms}, duration_ms=${epoch_ms} - started_at, error_text='$(sql_escape "$error_text")' WHERE id=(SELECT id FROM web_tasks WHERE invocation_key='$(sql_escape "$invocation_key")' AND status='started' ORDER BY id DESC LIMIT 1);"
+sqlite3 "$DB" "UPDATE web_tasks SET status='$(sql_escape "$status")', ended_at=${epoch_ms}, duration_ms=${epoch_ms} - started_at, error_text='$(sql_escape "$error_text")', output_full='$(sql_escape "$output_full")', prompt_tokens_est=${prompt_tokens_est} WHERE id=(SELECT id FROM web_tasks WHERE invocation_key='$(sql_escape "$invocation_key")' AND status='started' ORDER BY id DESC LIMIT 1);"
 
 exit 0

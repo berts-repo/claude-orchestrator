@@ -24,6 +24,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { createHash, randomUUID } from "crypto";
 import { readFileSync, realpathSync } from "fs";
+import { get_encoding } from "js-tiktoken";
 import { homedir } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -45,6 +46,35 @@ import {
   writeBatchStatus,
   writeCurrentBatchId,
 } from "../audit-mcp/db.js";
+
+let _enc = null;
+function countTokens(text) {
+  if (!text) return 0;
+  try {
+    if (!_enc) _enc = get_encoding("cl100k_base");
+    return _enc.encode(String(text)).length;
+  } catch {
+    return Math.ceil(String(text).length / 4);
+  }
+}
+
+const MODEL_PRICING = {
+  "o4-mini": [1.10, 4.40],
+  "o4-mini-2025-04-16": [1.10, 4.40],
+  o3: [10.0, 40.0],
+  "o3-2025-04-16": [10.0, 40.0],
+  "gpt-4o": [2.5, 10.0],
+  "gpt-4o-mini": [0.15, 0.60],
+  "codex-mini-latest": [1.50, 6.00],
+  "gpt-5.4": [2.50, 10.00],
+};
+
+function estimateCost(model, promptTokens, responseTokens) {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing || !promptTokens || !responseTokens) return null;
+  const [inputPer1M, outputPer1M] = pricing;
+  return (promptTokens / 1_000_000) * inputPer1M + (responseTokens / 1_000_000) * outputPer1M;
+}
 
 const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
 const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 600000; // 10 min
@@ -189,6 +219,11 @@ function toStoredError(result) {
   return (result.stderrText ?? result.error ?? "").slice(0, 2048);
 }
 
+function resolveTaskModel(task) {
+  const COMPLEXITY_MODEL_MAP = { light: "o4-mini", heavy: "o3" };
+  return task.model ?? (task.complexity ? COMPLEXITY_MODEL_MAP[task.complexity] : undefined);
+}
+
 function isGitRepository(cwd) {
   const result = spawnSync("git", ["-C", cwd, "rev-parse", "--git-dir"], {
     stdio: "ignore",
@@ -317,8 +352,7 @@ function runCodexContainer(task, index = 0, batchStart = Date.now(), hooks = {})
     const codexBin = process.env.CODEX_BIN ?? "codex";
     const shouldSkipGitRepoCheck = task["skip-git-repo-check"] || !isGitRepository(cwd);
 
-    const COMPLEXITY_MODEL_MAP = { light: "o4-mini", heavy: "o3" };
-    const resolvedModel = model ?? (task.complexity ? COMPLEXITY_MODEL_MAP[task.complexity] : undefined);
+    const resolvedModel = resolveTaskModel(task);
 
     const codexArgs = [
       "exec", "--ephemeral",
@@ -699,8 +733,11 @@ function buildStoredOutputs(result, promptText, project, promptCap) {
   return { promptValue, outputValue, outputFullValue, errorText, redactionCount };
 }
 
-function buildFinalizeUpdate(result, storedOutputs, startedAt) {
+function buildFinalizeUpdate(result, storedOutputs, startedAt, model, promptTokensEst) {
   const failed = !result.success;
+  const responseTokenEst = "stdoutText" in result
+    ? countTokens(result.stdoutText ?? "")
+    : Math.ceil((result.stdoutBytes ?? 0) / 4);
   return {
     started_at: startedAt,
     ended_at: result.finishedAt,
@@ -712,7 +749,8 @@ function buildFinalizeUpdate(result, storedOutputs, startedAt) {
     output_capped: result.outputCapped ? 1 : 0,
     stdout_bytes: result.stdoutBytes,
     stderr_bytes: result.stderrBytes,
-    response_token_est: Math.ceil(result.stdoutBytes / 4),
+    response_token_est: responseTokenEst,
+    cost_est_usd: estimateCost(model, promptTokensEst, responseTokenEst),
     prompt: storedOutputs.promptValue,
     output_truncated: storedOutputs.outputValue,
     output_full: storedOutputs.outputFullValue,
@@ -870,11 +908,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     );
     // Cache check — skip for danger-full-access (side-effectful)
     if (task.sandbox !== "danger-full-access") {
-      const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, task.model);
+      const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, resolveTaskModel(task));
       const cached = cacheGet(cacheKey);
       if (cached) {
         try {
-          ensureSession(task.model);
+          ensureSession(resolveTaskModel(task));
           const cacheInvocationId = randomUUID();
           const cacheBatchId = randomUUID();
           const now = Date.now();
@@ -887,7 +925,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 batchId: cacheBatchId,
                 promptSlug: toPromptSlug(task.prompt),
                 project: path.basename(task.cwd),
-                promptTokensEst: Math.ceil(task.prompt.length / 4),
+                promptTokensEst: countTokens(task.prompt),
                 taskIndex: 0,
               },
               { status: "cache-hit", started_at: now }
@@ -895,7 +933,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
           autoTag(cacheTaskId, toPromptSlug(task.prompt), task.sandbox);
           updateTask(cacheInvocationId, { started_at: now, ended_at: now, duration_ms: 0, status: "cache-hit", failure_reason: null });
-          completeBatch(cacheBatchId, 0, Math.ceil(cached.stdoutBytes / 4));
+          completeBatch(
+            cacheBatchId,
+            0,
+            "stdoutText" in cached
+              ? countTokens(cached.stdoutText ?? "")
+              : Math.ceil((cached.stdoutBytes ?? 0) / 4)
+          );
           cleanBatchStatus(cacheBatchId);
         } catch (err) {
           logDbError("cache-hit audit write failed", err);
@@ -912,7 +956,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const batchStart = Date.now();
     const promptSlug = toPromptSlug(task.prompt);
     const project = path.basename(task.cwd);
-    const promptTokensEst = Math.ceil(task.prompt.length / 4);
+    const promptTokensEst = countTokens(task.prompt);
     const maxPromptChars = Number.parseInt(getConfig("max_prompt_chars", "4000"), 10);
     const promptCap = Number.isFinite(maxPromptChars) && maxPromptChars > 0 ? maxPromptChars : 4000;
     const statusTasks = [{
@@ -926,7 +970,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }];
     writeCurrentBatchId(batchId, invocationId);
 
-    ensureSession(task.model);
+    ensureSession(resolveTaskModel(task));
     try {
       insertBatch(batchId, SESSION_ID, 1);
       const taskId = insertTask(
@@ -948,7 +992,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let taskFinalizePersisted = false;
     let batchCompleted = false;
     try {
-      updateTask(invocationId, buildFinalizeUpdate(result, storedOutputs, result.startedAt));
+      updateTask(
+        invocationId,
+        buildFinalizeUpdate(result, storedOutputs, result.startedAt, resolveTaskModel(task), promptTokensEst)
+      );
       taskFinalizePersisted = true;
       statusTasks[0] = {
         ...statusTasks[0],
@@ -957,7 +1004,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         durationMs: result.finishedAt - result.startedAt,
       };
       writeBatchStatus(batchId, statusTasks);
-      completeBatch(batchId, result.success ? 0 : 1, Math.ceil(result.stdoutBytes / 4));
+      completeBatch(
+        batchId,
+        result.success ? 0 : 1,
+        "stdoutText" in result
+          ? countTokens(result.stdoutText ?? "")
+          : Math.ceil((result.stdoutBytes ?? 0) / 4)
+      );
       batchCompleted = true;
       cleanBatchStatus(batchId);
     } catch (error) {
@@ -981,7 +1034,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       if (!batchCompleted) {
         try {
-          completeBatch(batchId, 1, Math.ceil((result.stdoutBytes ?? 0) / 4));
+          completeBatch(
+            batchId,
+            1,
+            "stdoutText" in result
+              ? countTokens(result.stdoutText ?? "")
+              : Math.ceil((result.stdoutBytes ?? 0) / 4)
+          );
         } catch (fallbackError) {
           logDbError("single task finalize fallback batch completion failed", fallbackError);
         }
@@ -992,7 +1051,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (result.success && task.sandbox !== "danger-full-access") {
-      cacheSet(toPromptCacheKey(task.prompt, task.sandbox, task.model), result);
+      cacheSet(toPromptCacheKey(task.prompt, task.sandbox, resolveTaskModel(task)), result);
     }
 
     return {
@@ -1042,10 +1101,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       startedAt: null,
       endedAt: null,
       durationMs: null,
-      promptTokensEst: Math.ceil(task.prompt.length / 4),
+      promptTokensEst: countTokens(task.prompt),
     }));
 
-    ensureSession(normalizedTasks[0]?.model);
+    ensureSession(normalizedTasks[0] ? resolveTaskModel(normalizedTasks[0]) : undefined);
     try {
       insertBatch(batchId, SESSION_ID, normalizedTasks.length);
       for (const state of taskStates) {
@@ -1078,7 +1137,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Cache check per task (skip danger-full-access)
         if (task.sandbox !== "danger-full-access") {
-          const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, task.model);
+          const cacheKey = toPromptCacheKey(task.prompt, task.sandbox, resolveTaskModel(task));
           const cached = cacheGet(cacheKey);
           if (cached) {
             const now = Date.now();
@@ -1115,11 +1174,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           state.durationMs = result.finishedAt - state.startedAt;
 
           if (result.success && task.sandbox !== "danger-full-access") {
-            cacheSet(toPromptCacheKey(task.prompt, task.sandbox, task.model), result);
+            cacheSet(toPromptCacheKey(task.prompt, task.sandbox, resolveTaskModel(task)), result);
           }
 
           try {
-            updateTask(state.invocationId, buildFinalizeUpdate(result, storedOutputs, state.startedAt));
+            updateTask(
+              state.invocationId,
+              buildFinalizeUpdate(result, storedOutputs, state.startedAt, resolveTaskModel(task), state.promptTokensEst)
+            );
             writeBatchStatus(batchId, taskStates);
           } catch (error) {
             logDbError(`parallel completion update failed (task ${i + 1})`, error);
@@ -1136,7 +1198,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }).length;
       const totalTokens = settledResults.reduce((sum, settled) => {
         if (settled.status === "rejected") return sum;
-        return sum + Math.ceil((settled.value.stdoutBytes ?? 0) / 4);
+        return sum + ("stdoutText" in settled.value
+          ? countTokens(settled.value.stdoutText ?? "")
+          : Math.ceil((settled.value.stdoutBytes ?? 0) / 4));
       }, 0);
       completeBatch(batchId, failedCount, totalTokens);
       cleanBatchStatus(batchId);

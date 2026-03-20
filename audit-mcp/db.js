@@ -127,7 +127,9 @@ function initSchema(conn) {
       ended_at        INTEGER,
       duration_ms     INTEGER,
       error_text      TEXT,
-      cwd             TEXT
+      cwd             TEXT,
+      output_full     TEXT,
+      prompt_tokens_est INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_web_tasks_started    ON web_tasks(started_at);
     CREATE INDEX IF NOT EXISTS idx_web_tasks_session    ON web_tasks(session_id);
@@ -173,6 +175,17 @@ export function migrateSchema(conn) {
   try {
     conn.exec("ALTER TABLE tasks DROP COLUMN token_est");
   } catch {}
+  // Ensure config table has updated_at column
+  const webTaskCols = new Set(
+    conn.prepare("PRAGMA table_info(web_tasks)").all().map((c) => c.name)
+  );
+  if (!webTaskCols.has("output_full")) {
+    conn.exec("ALTER TABLE web_tasks ADD COLUMN output_full TEXT");
+  }
+  if (!webTaskCols.has("prompt_tokens_est")) {
+    conn.exec("ALTER TABLE web_tasks ADD COLUMN prompt_tokens_est INTEGER");
+  }
+
   // Ensure config table has updated_at column
   const configCols = new Set(conn.prepare("PRAGMA table_info(config)").all().map((c) => c.name));
   if (!configCols.has("updated_at")) {
