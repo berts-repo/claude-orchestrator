@@ -20,15 +20,19 @@ Then stop.
 For `query <sql> [--to-file]`:
 - Only allow read-only `SELECT` statements.
 - Reject anything else with: `Only SELECT queries are allowed.`
-- If `--to-file` is present: run this Bash command and print the output path:
-  ```bash
-  sqlite3 -json ~/.claude/audit.db "<sql>" > /tmp/audit-query.json && echo "Saved to /tmp/audit-query.json"
-  ```
-  Then stop — do not display the file contents.
+- If `--to-file` is present:
+  - Reject if `sql` contains `;` outside of a string literal (multiple statements), shell metacharacters (backticks, `$()`, unescaped `\`), or any non-SELECT DML/DDL keyword (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `CREATE`, `ALTER`, `ATTACH`). Print: `Error: unsafe SQL rejected.` and stop.
+  - Escape any single quotes in `sql` by doubling them (`'` → `''`) before shell embedding.
+  - Run:
+    ```bash
+    sqlite3 -json ~/.claude/audit.db "<sql>" > /tmp/audit-query.json && echo "Saved to /tmp/audit-query.json"
+    ```
+  - Then stop — do not display the file contents.
 - Otherwise: use `mcp__audit__run_query` with the provided `sql`.
 
 For `export [--days <n>] [--table tasks|security_events|web_tasks]`:
 - `--days` defaults to `7`. `--table` defaults to `tasks`.
+- **Validate before running:** `--days` must be a positive integer (1–365). `--table` must be exactly one of `tasks`, `security_events`, `web_tasks`. Reject anything else with: `Error: invalid argument.` and stop.
 - For `tasks` table:
   ```bash
   sqlite3 -json ~/.claude/audit.db "SELECT * FROM tasks WHERE started_at > (strftime('%s','now','-<days> days') * 1000) ORDER BY started_at DESC" > /tmp/audit-export.json && echo "Exported to /tmp/audit-export.json"

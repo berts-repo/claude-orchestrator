@@ -19,6 +19,10 @@ Argument rules:
 
 `task_index` defaults to `0` if not provided.
 
+**Validate before running:**
+- `batch_id` must match `^[0-9a-f-]{36}$` (UUID format). If not, print: `Error: invalid batch_id.` and stop.
+- `task_index` must be a non-negative integer. If not, print: `Error: task_index must be a non-negative integer.` and stop.
+
 Run this Bash command to write the full output to a temp file and open it:
 
 ```bash
@@ -104,7 +108,12 @@ LIMIT <limit * 5>
 
 Replace `<keyword>` with the search term.
 
-If the combined row count from both queries exceeds 20, write results to a file instead of displaying inline:
+If the combined row count from both queries exceeds 20, write results to a file instead of displaying inline.
+
+**Before writing to file, sanitize `<keyword>` for safe shell and SQL embedding:**
+- Replace every `'` with `''` (SQL literal escaping)
+- Remove shell metacharacters: backticks, `$()`, `\`, `"` — if any are present after SQL escaping, print: `Error: keyword contains unsafe characters.` and stop.
+
 ```bash
 sqlite3 -json ~/.claude/audit.db "SELECT b.session_id, b.started_at, t.batch_id, t.task_index, t.prompt_slug, t.output_truncated, t.status, t.duration_ms, t.error_text FROM batches b JOIN tasks t ON t.batch_id = b.id WHERE t.prompt LIKE '%<keyword>%' OR t.prompt_slug LIKE '%<keyword>%' ORDER BY b.started_at DESC LIMIT <limit * 5>" > /tmp/history-search.json
 sqlite3 -json ~/.claude/audit.db "SELECT id, session_id, tool_name, prompt, status, started_at, duration_ms, error_text FROM web_tasks WHERE prompt LIKE '%<keyword>%' ORDER BY started_at DESC LIMIT <limit * 5>" >> /tmp/history-search.json
