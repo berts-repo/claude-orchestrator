@@ -23,6 +23,15 @@ Delegate to Codex with:
 - approval-policy: never
 - cwd: current working directory
 
+### Timeout by flag:
+
+| Flag | timeout_ms |
+|------|-----------|
+| --small | 300000 |
+| --medium / default | 600000 |
+| --large | 900000 |
+| --delegate | 300000 |
+
 ### Codex prompt by flag:
 
 **--small** — Read CLAUDE.md and README.md only. Output ~40 lines:

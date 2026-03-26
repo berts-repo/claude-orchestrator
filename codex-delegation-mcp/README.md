@@ -10,7 +10,7 @@ Key features:
 - **Two tools** — `codex` (single task) and `codex_parallel` (up to 10 tasks in parallel)
 - **Three sandbox modes** — `read-only`, `workspace-write`, `danger-full-access`
 - **Ephemeral processes** — each call is a fresh `codex exec --ephemeral` subprocess; pass full context per call
-- **Timeout protection** — 5-minute default (`CODEX_POOL_TIMEOUT_MS`); SIGTERM + SIGKILL on expiry
+- **Timeout protection** — 15-minute default (`CODEX_POOL_TIMEOUT_MS`); SIGTERM + SIGKILL on expiry
 - **Output capping** — 2 MB limit per subprocess; process terminated if exceeded
 - **API key resolution** — checks `OPENAI_API_KEY` env first, then `~/.codex/auth.json`
 
@@ -253,7 +253,7 @@ Parallel batch: 3 tasks, total wall time 12340ms
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `OPENAI_API_KEY` | — | OpenAI API key (checked before `~/.codex/auth.json`) |
-| `CODEX_POOL_TIMEOUT_MS` | `300000` (5 min) | Subprocess timeout in milliseconds |
+| `CODEX_POOL_TIMEOUT_MS` | `900000` (15 min) | Subprocess timeout in milliseconds |
 | `CODEX_BIN` | `codex` | Path to the Codex CLI binary |
 | `CODEX_POOL_ALLOWED_CWD_ROOTS` | from repo-root `config.json` (`allowedRoots`) | Comma-separated absolute cwd roots allowed for delegated tasks |
 | `CODEX_ALLOW_DANGER_SANDBOX` | `0` | Set to `1` to permit `sandbox: "danger-full-access"` |
@@ -276,7 +276,7 @@ codex --version
 Increase the timeout for long-running tasks:
 
 ```bash
-CODEX_POOL_TIMEOUT_MS=600000 node server.js  # 10 minutes
+CODEX_POOL_TIMEOUT_MS=1200000 node server.js  # 20 minutes for very large repos
 ```
 
 Or set it permanently in your environment.
