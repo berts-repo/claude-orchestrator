@@ -25,7 +25,8 @@ constraints and report results.
 2. **No network access.** Do not attempt:
    - `curl`, `wget`, `fetch`, `http`, `nc`, `ssh`, `scp`
    - Package installs (`npm install`, `pip install`) unless explicitly requested
-   - Git remote operations (`git push`, `git fetch`, `git clone`)
+   - Git operations pointing at explicit URLs (`https://`, `git@`, `git://`, `ssh://`) — e.g. `git clone <url>`, `git remote add <url>`
+   - (`git push`, `git fetch`, `git pull` without an explicit URL are permitted)
    - Any outbound connection
 
 3. **No piping to shell.** Never:

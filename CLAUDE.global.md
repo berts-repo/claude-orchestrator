@@ -51,28 +51,6 @@ Always set `cwd` to an absolute path. Allowed and blocked paths come from repo-r
 
 **Overflow file reading:** When a `codex_parallel` result exceeds the MCP display limit, Claude Code saves the raw output to a file and prints the path. Read it with the `Read` tool (not Bash). Look for `"success": true` / `"success": false` per task. Do not attempt to parse it as JSON with a shell command.
 
-## Adding Hooks
-
-Hooks are registered via frontmatter headers in non-helper `hooks/*.sh` files. Match existing naming (`<domain>--<action>.sh`).
-- Required: `# HOOK_EVENT:`
-- Optional: `# HOOK_TIMEOUT:` (defaults to `5` seconds when omitted), `# HOOK_MATCHER:`
-- Helper-only scripts must set `# HOOK_HELPER: true` and are not registered as hooks.
-
-To add a new hook:
-1. Delegate hook script creation to Codex (`workspace-write`, scoped to the repo `cwd`)
-2. Codex writes the `.sh` file with the correct frontmatter headers
-3. Claude runs `bash scripts/sync.sh` to apply (unified hooks + slash-command sync)
-
-Never ask Codex to touch `~/.claude/` — it is blocked by AGENTS.md security rules.
-
-## Adding Slash Commands
-
-Slash commands are `.md` files in `commands/`. To add a new command:
-1. Delegate authoring to Codex (`workspace-write`, scoped to the repo `cwd`)
-2. Claude runs `bash scripts/sync.sh` to install/update command symlinks in `~/.claude/commands/`
-
-`sync.sh` is idempotent — safe to re-run. Supports `--check` and `--dry-run`.
-
 ## Blocked Subagents
 
 Do NOT use these Task subagents. Use Codex instead (saves 90-97% tokens):

@@ -46,6 +46,7 @@ import {
   writeCurrentBatchId,
 } from "../audit-mcp/db.js";
 
+<<<<<<< Updated upstream
 let _enc = null;
 function countTokens(text) {
   if (!text) return 0;
@@ -75,8 +76,8 @@ function estimateCost(model, promptTokens, responseTokens) {
   return (promptTokens / 1_000_000) * inputPer1M + (responseTokens / 1_000_000) * outputPer1M;
 }
 
-const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "300000", 10);
-const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 600000; // 10 min
+const parsedTimeoutMs = parseInt(process.env.CODEX_POOL_TIMEOUT_MS ?? "900000", 10);
+const DEFAULT_TIMEOUT_MS = Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 900000; // 15 min
 const FORCE_KILL_DELAY_MS = 5000;
 const MAX_OUTPUT_BYTES = 200 * 1024; // ~200 KB — stay under Claude Code's MCP result token limit
 const PARALLEL_TASK_MAX_OUTPUT = 20000; // 20 KB per task in codex_parallel responses
@@ -835,7 +836,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           cwd: { type: "string", description: "Absolute path to working directory" },
           timeout_ms: {
             type: "number",
-            description: "Timeout in milliseconds for this task. Overrides the server default (600000).",
+            description: "Timeout in milliseconds for this task. Overrides the server default (900000 = 15 min). Read-only exploration of large repos often needs 600000–900000; write tasks rarely exceed 600000.",
           },
           sandbox: {
             type: "string",
@@ -882,7 +883,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 cwd: { type: "string" },
                 timeout_ms: {
                   type: "number",
-                  description: "Timeout in milliseconds for this task. Overrides the server default (600000).",
+                  description: "Timeout in milliseconds for this task. Overrides the server default (900000 = 15 min). Read-only exploration of large repos often needs 600000–900000; write tasks rarely exceed 600000.",
                 },
                 sandbox: {
                   type: "string",

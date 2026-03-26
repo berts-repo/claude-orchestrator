@@ -51,6 +51,18 @@ if printf '%s\n' "$command" | grep -Eiq "${_P}git([[:space:]]+(-[^[:space:]]+|[[
   exit 0
 fi
 
+# Allow git fetch (with optional flags and plain remote name, but no explicit URL).
+if printf '%s\n' "$command" | grep -Eiq "${_P}git([[:space:]]+(-[^[:space:]]+|[[:alnum:]_./:-]+))*[[:space:]]+fetch([[:space:]]+(-[^[:space:]]+|[[:alnum:]_./:-]+))*([[:space:];]|$)" && \
+   ! printf '%s\n' "$command" | grep -Eiq 'https?://|git@|git://|ssh://'; then
+  exit 0
+fi
+
+# Allow git pull (with optional flags/remote/branch, but no explicit URL).
+if printf '%s\n' "$command" | grep -Eiq "${_P}git([[:space:]]+(-[^[:space:]]+|[[:alnum:]_./:-]+))*[[:space:]]+pull([[:space:]]+(-[^[:space:]]+|[[:alnum:]_./:-]+))*([[:space:];]|$)" && \
+   ! printf '%s\n' "$command" | grep -Eiq 'https?://|git@|git://|ssh://'; then
+  exit 0
+fi
+
 # Deny-by-default: block if any category matches.
 _match() { printf '%s\n' "$command" | grep -Eiq "$1"; }
 
